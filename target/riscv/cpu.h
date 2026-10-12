@@ -359,6 +359,14 @@ struct CPUArchState {
     uint64_t htimedelta;
     uint64_t hvien;
 
+    /* xcvhtime */
+    uint64_t htimectl;
+    uint64_t hexit_time;
+    uint64_t hhidden_time;
+    uint64_t hvtimecmp;
+    uint64_t hexit_cycle;
+    uint64_t hhidden_cycle;
+
     /*
      * Bits VSSIP, VSTIP and VSEIP in hvip are maintained in mip. Other bits
      * from 0:12 are reserved. Bits 13:63 are not aliased and must be separately
@@ -984,6 +992,9 @@ const char *satp_mode_str(uint8_t satp_mode, bool is_32_bit);
 
 /* In th_csr.c */
 extern const RISCVCSR th_csr_list[];
+
+/* In xcv_csr.c */
+extern const RISCVCSR xcv_csr_list[];
 
 const char *priv_spec_to_str(int priv_version);
 #endif /* RISCV_CPU_H */

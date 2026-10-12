@@ -754,6 +754,13 @@ static void riscv_cpu_reset_hold(Object *obj, ResetType type)
         env->mideleg |= HS_MODE_INTERRUPTS;
     }
 
+    env->htimectl = 0;
+    env->hexit_time = 0;
+    env->hhidden_time = 0;
+    env->hvtimecmp = 0;
+    env->hexit_cycle = 0;
+    env->hhidden_cycle = 0;
+
     /*
      * Clear mseccfg and unlock all the PMP entries upon reset.
      * This is allowed as per the priv and smepmp specifications
@@ -1143,6 +1150,8 @@ static void riscv_cpu_init(Object *obj)
     if (mcc->def->custom_csrs) {
         riscv_register_custom_csrs(cpu, mcc->def->custom_csrs);
     }
+    /* Properties are not parsed yet: the predicate checks ext_xcvhtime */
+    riscv_register_custom_csrs(cpu, xcv_csr_list);
 #endif
 
     accel_cpu_instance_init(CPU(obj));

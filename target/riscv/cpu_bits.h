@@ -274,6 +274,15 @@
 #define CSR_HTIMEDELTA      0x605
 #define CSR_HTIMEDELTAH     0x615
 
+/* CORE-V hidden time (xcvhtime), RV64 only */
+#define CSR_XCV_HTIMECTL        0x6C0
+#define CSR_XCV_HEXIT_TIME      0x6C1
+#define CSR_XCV_HHIDDEN_TIME    0x6C2
+#define CSR_XCV_HVTIMECMP       0x6C3
+#define CSR_XCV_HEXIT_CYCLE     0x6C4
+#define CSR_XCV_HHIDDEN_CYCLE   0x6C5
+#define XCV_HTIMECTL_HHAE       BIT(0)
+
 /* Hypervisor Configuration CSRs */
 #define CSR_HENVCFG         0x60A
 #define CSR_HENVCFGH        0x61A
