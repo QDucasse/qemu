@@ -995,6 +995,7 @@ extern const RISCVCSR th_csr_list[];
 
 /* In xcv_csr.c */
 extern const RISCVCSR xcv_csr_list[];
+void riscv_xcvhtime_virt_changed(CPURISCVState *env, bool virt_en);
 
 const char *priv_spec_to_str(int priv_version);
 #endif /* RISCV_CPU_H */

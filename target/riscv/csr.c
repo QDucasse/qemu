@@ -1416,6 +1416,14 @@ static RISCVException read_hpmcounter(CPURISCVState *env, int csrno,
         return RISCV_EXCP_ILLEGAL_INST;
     }
 
+    if (csrno == CSR_CYCLE && env->virt_enabled &&
+        riscv_cpu_cfg(env)->ext_xcvhtime) {
+        /* vcycle = mcycle - hhidden_cycle */
+        riscv_pmu_read_ctr(env, val, false, ctr_index);
+        *val -= env->hhidden_cycle;
+        return RISCV_EXCP_NONE;
+    }
+
     return riscv_pmu_read_ctr(env, val, false, ctr_index);
 }
 
@@ -1631,10 +1639,21 @@ static RISCVException read_scountovf(CPURISCVState *env, int csrno,
     return RISCV_EXCP_NONE;
 }
 
+static uint64_t riscv_time_delta(CPURISCVState *env)
+{
+    if (!env->virt_enabled) {
+        return 0;
+    }
+    if (riscv_cpu_cfg(env)->ext_xcvhtime) {
+        return env->htimedelta - env->hhidden_time;
+    }
+    return env->htimedelta;
+}
+
 static RISCVException read_time(CPURISCVState *env, int csrno,
                                 target_ulong *val)
 {
-    uint64_t delta = env->virt_enabled ? env->htimedelta : 0;
+    uint64_t delta = riscv_time_delta(env);
 
     if (!env->rdtime_fn) {
         return RISCV_EXCP_ILLEGAL_INST;
@@ -1647,7 +1666,7 @@ static RISCVException read_time(CPURISCVState *env, int csrno,
 static RISCVException read_timeh(CPURISCVState *env, int csrno,
                                  target_ulong *val)
 {
-    uint64_t delta = env->virt_enabled ? env->htimedelta : 0;
+    uint64_t delta = riscv_time_delta(env);
 
     if (!env->rdtime_fn) {
         return RISCV_EXCP_ILLEGAL_INST;

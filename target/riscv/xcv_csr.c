@@ -9,6 +9,36 @@
 
 #include "qemu/osdep.h"
 #include "cpu.h"
+#include "pmu.h"
+
+static uint64_t xcv_mtime(CPURISCVState *env)
+{
+    return env->rdtime_fn ? env->rdtime_fn(env->rdtime_fn_arg) : 0;
+}
+
+static uint64_t xcv_mcycle(CPURISCVState *env)
+{
+    target_ulong val;
+
+    riscv_pmu_read_ctr(env, &val, false, 0);
+    return val;
+}
+
+/*
+ * Called after every V change. Latch on V 1->0 whatever the target mode;
+ * accumulate on V 0->1 if HHAE. Nested transitions (V->HS->M->HS->V) only
+ * see the V edges.
+ */
+void riscv_xcvhtime_virt_changed(CPURISCVState *env, bool virt_en)
+{
+    if (!virt_en) {
+        env->hexit_time = xcv_mtime(env);
+        env->hexit_cycle = xcv_mcycle(env);
+    } else if (env->htimectl & XCV_HTIMECTL_HHAE) {
+        env->hhidden_time += xcv_mtime(env) - env->hexit_time;
+        env->hhidden_cycle += xcv_mcycle(env) - env->hexit_cycle;
+    }
+}
 
 /*
  * The generic CSR check derives the access rules from the H-level address:

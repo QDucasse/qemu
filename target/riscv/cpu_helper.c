@@ -1055,12 +1055,17 @@ void riscv_cpu_set_mode(CPURISCVState *env, target_ulong newpriv, bool virt_en)
     env->load_res = -1;
 
     if (riscv_has_ext(env, RVH)) {
+        bool virt_changed = env->virt_enabled != virt_en;
+
         /* Flush the TLB on all virt mode changes. */
-        if (env->virt_enabled != virt_en) {
+        if (virt_changed) {
             tlb_flush(env_cpu(env));
         }
 
         env->virt_enabled = virt_en;
+        if (virt_changed && riscv_cpu_cfg(env)->ext_xcvhtime) {
+            riscv_xcvhtime_virt_changed(env, virt_en);
+        }
         if (virt_en) {
             /*
              * The guest external interrupts from an interrupt controller are
