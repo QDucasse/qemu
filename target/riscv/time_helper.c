@@ -181,8 +181,7 @@ static void riscv_timer_disable_timecmp(CPURISCVState *env, QEMUTimer *timer,
 void riscv_timer_stce_changed(CPURISCVState *env, bool is_m_mode, bool enable)
 {
     if (enable) {
-        riscv_timer_write_timecmp(env, env->vstimer, env->vstimecmp,
-                                  env->htimedelta, MIP_VSTIP);
+        riscv_timer_update_vtimers(env);
     } else {
         riscv_timer_disable_timecmp(env, env->vstimer, MIP_VSTIP);
     }
@@ -210,4 +209,48 @@ void riscv_timer_init(RISCVCPU *cpu)
 
     env->vstimer = timer_new_ns(QEMU_CLOCK_VIRTUAL, &riscv_vstimer_cb, cpu);
     env->vstimecmp = 0;
+}
+
+static bool riscv_vstimer_enabled(CPURISCVState *env)
+{
+    return riscv_cpu_cfg(env)->ext_sstc && env->rdtime_fn &&
+           env->rdtime_fn_arg && get_field(env->menvcfg, MENVCFG_STCE) &&
+           riscv_has_ext(env, RVH) && get_field(env->henvcfg, HENVCFG_STCE);
+}
+
+/*
+ * Recompute VSTIP from the current state and re-arm the host timer, which is
+ * only a wake-up. Called whenever vtime_eff or vstimecmp changes.
+ *
+ *   vtime     = mtime + htimedelta - hhidden_time
+ *   vtime_eff = (V == 0 && HHAE) ? hexit_time + htimedelta - hhidden_time
+ *                                : vtime
+ */
+void riscv_timer_update_vtimers(CPURISCVState *env)
+{
+    uint64_t delta = env->htimedelta;
+    uint64_t vtime;
+
+    if (!riscv_cpu_cfg(env)->ext_xcvhtime) {
+        riscv_timer_write_timecmp(env, env->vstimer, env->vstimecmp,
+                                  delta, MIP_VSTIP);
+        return;
+    }
+
+    delta -= env->hhidden_time;
+
+    if (env->virt_enabled || !(env->htimectl & XCV_HTIMECTL_HHAE)) {
+        /* live */
+        riscv_timer_write_timecmp(env, env->vstimer, env->vstimecmp,
+                                  delta, MIP_VSTIP);
+        return;
+    }
+
+    /* frozen: guest time stops at the exit point, no wake-up */
+    timer_del(env->vstimer);
+    vtime = env->hexit_time + delta;
+    if (riscv_vstimer_enabled(env)) {
+        env->vstime_irq = env->vstimecmp <= vtime;
+    }
+    riscv_cpu_update_mip(env, 0, 0);
 }

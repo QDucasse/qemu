@@ -10,6 +10,7 @@
 #include "qemu/osdep.h"
 #include "cpu.h"
 #include "pmu.h"
+#include "time_helper.h"
 
 static uint64_t xcv_mtime(CPURISCVState *env)
 {
@@ -38,6 +39,8 @@ void riscv_xcvhtime_virt_changed(CPURISCVState *env, bool virt_en)
         env->hhidden_time += xcv_mtime(env) - env->hexit_time;
         env->hhidden_cycle += xcv_mcycle(env) - env->hexit_cycle;
     }
+
+    riscv_timer_update_vtimers(env);
 }
 
 /*
@@ -87,6 +90,11 @@ static RISCVException write_xcv(CPURISCVState *env, int csrno,
         val &= XCV_HTIMECTL_HHAE;
     }
     *xcv_csr_ptr(env, csrno) = val;
+
+    /* The cycle CSRs feed no comparator */
+    if (csrno != CSR_XCV_HEXIT_CYCLE && csrno != CSR_XCV_HHIDDEN_CYCLE) {
+        riscv_timer_update_vtimers(env);
+    }
 
     return RISCV_EXCP_NONE;
 }
