@@ -30,6 +30,9 @@ static void riscv_vstimer_cb(void *opaque)
     riscv_cpu_update_mip(env, 0, BOOL_TO_MASK(1));
 }
 
+static void riscv_timer_arm(QEMUTimer *timer, uint64_t diff,
+                            uint32_t timebase_freq);
+
 static void riscv_stimer_cb(void *opaque)
 {
     RISCVCPU *cpu = opaque;
@@ -44,7 +47,6 @@ void riscv_timer_write_timecmp(CPURISCVState *env, QEMUTimer *timer,
                                uint64_t timecmp, uint64_t delta,
                                uint32_t timer_irq)
 {
-    uint64_t diff, ns_diff, next;
     RISCVAclintMTimerState *mtimer = env->rdtime_fn_arg;
     uint32_t timebase_freq;
     uint64_t rtc_r;
@@ -112,7 +114,15 @@ void riscv_timer_write_timecmp(CPURISCVState *env, QEMUTimer *timer,
     }
 
     /* otherwise, set up the future timer interrupt */
-    diff = timecmp - rtc_r;
+    riscv_timer_arm(timer, timecmp - rtc_r, timebase_freq);
+}
+
+/* Arm @timer to fire @diff timebase ticks from now */
+static void riscv_timer_arm(QEMUTimer *timer, uint64_t diff,
+                            uint32_t timebase_freq)
+{
+    uint64_t ns_diff, next;
+
     /* back to ns (note args switched in muldiv64) */
     ns_diff = muldiv64(diff, NANOSECONDS_PER_SECOND, timebase_freq);
 
