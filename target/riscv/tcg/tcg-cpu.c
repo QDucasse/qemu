@@ -620,6 +620,12 @@ void riscv_cpu_validate_set_extensions(RISCVCPU *cpu, Error **errp)
         return;
     }
 
+    if (cpu->cfg.ext_xcvhtime &&
+        (!riscv_has_ext(env, RVH) || mcc->def->misa_mxl_max != MXL_RV64)) {
+        error_setg(errp, "xcvhtime requires RV64 and the H extension");
+        return;
+    }
+
     if (!riscv_has_ext(env, RVI) && !riscv_has_ext(env, RVE)) {
         error_setg(errp,
                    "Either I or E extension must be set");
