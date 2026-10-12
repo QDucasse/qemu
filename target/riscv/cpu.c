@@ -21,6 +21,7 @@
 #include "qemu/qemu-print.h"
 #include "qemu/ctype.h"
 #include "qemu/log.h"
+#include "qemu/timer.h"
 #include "cpu.h"
 #include "cpu_vendorid.h"
 #include "internals.h"
@@ -754,12 +755,20 @@ static void riscv_cpu_reset_hold(Object *obj, ResetType type)
         env->mideleg |= HS_MODE_INTERRUPTS;
     }
 
+    /* xcvhtime: mideleg[24] is read-only 1 */
     env->htimectl = 0;
     env->hexit_time = 0;
     env->hhidden_time = 0;
     env->hvtimecmp = 0;
     env->hexit_cycle = 0;
     env->hhidden_cycle = 0;
+    env->hvti_irq = false;
+    if (env->hvtimer) {
+        timer_del(env->hvtimer);
+    }
+    if (cpu->cfg.ext_xcvhtime) {
+        env->mideleg |= MIP_XCV_HVTI;
+    }
 
     /*
      * Clear mseccfg and unlock all the PMP entries upon reset.

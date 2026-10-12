@@ -429,8 +429,9 @@ uint64_t riscv_cpu_all_pending(CPURISCVState *env)
     uint32_t gein = get_field(env->hstatus, HSTATUS_VGEIN);
     uint64_t vsgein = (env->hgeip & (1ULL << gein)) ? MIP_VSEIP : 0;
     uint64_t vstip = (env->vstime_irq) ? MIP_VSTIP : 0;
+    uint64_t hvti = (env->virt_enabled && env->hvti_irq) ? MIP_XCV_HVTI : 0;
 
-    return (env->mip | vsgein | vstip) & env->mie;
+    return (env->mip | vsgein | vstip | hvti) & env->mie;
 }
 
 int riscv_cpu_mirq_pending(CPURISCVState *env)
@@ -735,6 +736,9 @@ void riscv_cpu_interrupt(CPURISCVState *env)
     }
 
     vstip = env->vstime_irq ? MIP_VSTIP : 0;
+    if (env->virt_enabled && env->hvti_irq) {
+        irqf |= MIP_XCV_HVTI;
+    }
 
     if (env->mip | vsgein | vstip | irqf) {
         cpu_interrupt(cs, CPU_INTERRUPT_HARD);

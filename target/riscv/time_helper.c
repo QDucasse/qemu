@@ -33,6 +33,14 @@ static void riscv_vstimer_cb(void *opaque)
 static void riscv_timer_arm(QEMUTimer *timer, uint64_t diff,
                             uint32_t timebase_freq);
 
+static void riscv_hvtimer_cb(void *opaque)
+{
+    RISCVCPU *cpu = opaque;
+    CPURISCVState *env = &cpu->env;
+    env->hvti_irq = 1;
+    riscv_cpu_update_mip(env, 0, BOOL_TO_MASK(1));
+}
+
 static void riscv_stimer_cb(void *opaque)
 {
     RISCVCPU *cpu = opaque;
@@ -209,6 +217,8 @@ void riscv_timer_init(RISCVCPU *cpu)
 
     env->vstimer = timer_new_ns(QEMU_CLOCK_VIRTUAL, &riscv_vstimer_cb, cpu);
     env->vstimecmp = 0;
+
+    env->hvtimer = timer_new_ns(QEMU_CLOCK_VIRTUAL, &riscv_hvtimer_cb, cpu);
 }
 
 static bool riscv_vstimer_enabled(CPURISCVState *env)
@@ -219,8 +229,34 @@ static bool riscv_vstimer_enabled(CPURISCVState *env)
 }
 
 /*
- * Recompute VSTIP from the current state and re-arm the host timer, which is
- * only a wake-up. Called whenever vtime_eff or vstimecmp changes.
+ * Live hvtimecmp comparator: same as riscv_timer_write_timecmp() without
+ * the Sstc/STCE gating.
+ */
+static void riscv_hvtimer_write(CPURISCVState *env, uint64_t delta)
+{
+    RISCVAclintMTimerState *mtimer = env->rdtime_fn_arg;
+    uint64_t vtime;
+
+    if (!env->rdtime_fn || !env->rdtime_fn_arg) {
+        return;
+    }
+
+    vtime = env->rdtime_fn(env->rdtime_fn_arg) + delta;
+    env->hvti_irq = env->hvtimecmp <= vtime;
+    riscv_cpu_update_mip(env, 0, 0);
+
+    if (env->hvti_irq || env->hvtimecmp == UINT64_MAX) {
+        timer_del(env->hvtimer);
+        return;
+    }
+    riscv_timer_arm(env->hvtimer, env->hvtimecmp - vtime,
+                    mtimer->timebase_freq);
+}
+
+/*
+ * Recompute VSTIP and the hvtimecmp level from the current state and re-arm
+ * the host timers, which are only wake-ups. Called whenever vtime_eff or a
+ * comparand changes.
  *
  *   vtime     = mtime + htimedelta - hhidden_time
  *   vtime_eff = (V == 0 && HHAE) ? hexit_time + htimedelta - hhidden_time
@@ -243,14 +279,17 @@ void riscv_timer_update_vtimers(CPURISCVState *env)
         /* live */
         riscv_timer_write_timecmp(env, env->vstimer, env->vstimecmp,
                                   delta, MIP_VSTIP);
+        riscv_hvtimer_write(env, delta);
         return;
     }
 
-    /* frozen: guest time stops at the exit point, no wake-up */
+    /* frozen: guest time stops at the exit point, no wake-ups */
     timer_del(env->vstimer);
+    timer_del(env->hvtimer);
     vtime = env->hexit_time + delta;
     if (riscv_vstimer_enabled(env)) {
         env->vstime_irq = env->vstimecmp <= vtime;
     }
+    env->hvti_irq = env->hvtimecmp <= vtime;
     riscv_cpu_update_mip(env, 0, 0);
 }

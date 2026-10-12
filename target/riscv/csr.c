@@ -2226,6 +2226,10 @@ static RISCVException rmw_mideleg64(CPURISCVState *env, int csrno,
         env->mideleg |= HS_MODE_INTERRUPTS;
     }
 
+    if (riscv_cpu_cfg(env)->ext_xcvhtime) {
+        env->mideleg |= MIP_XCV_HVTI;
+    }
+
     return RISCV_EXCP_NONE;
 }
 
@@ -2275,6 +2279,10 @@ static RISCVException rmw_mie64(CPURISCVState *env, int csrno,
 
     if (!riscv_has_ext(env, RVH)) {
         env->mie &= ~((uint64_t)HS_MODE_INTERRUPTS);
+    }
+
+    if (!riscv_cpu_cfg(env)->ext_xcvhtime) {
+        env->mie &= ~MIP_XCV_HVTI;
     }
 
     return RISCV_EXCP_NONE;
@@ -4706,6 +4714,11 @@ static RISCVException rmw_hideleg64(CPURISCVState *env, int csrno,
     }
 
     env->hideleg = (env->hideleg & ~mask) | (new_val & mask);
+
+    /* xcvhtime: interrupt 24 is always taken in HS */
+    if (riscv_cpu_cfg(env)->ext_xcvhtime) {
+        env->hideleg &= ~MIP_XCV_HVTI;
+    }
     return RISCV_EXCP_NONE;
 }
 

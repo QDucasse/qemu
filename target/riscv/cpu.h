@@ -501,6 +501,8 @@ struct CPUArchState {
     QEMUTimer *stimer; /* Internal timer for S-mode interrupt */
     QEMUTimer *vstimer; /* Internal timer for VS-mode interrupt */
     bool vstime_irq;
+    QEMUTimer *hvtimer; /* xcvhtime: internal timer for hvtimecmp */
+    bool hvti_irq;
 
     hwaddr kernel_addr;
     hwaddr fdt_addr;
