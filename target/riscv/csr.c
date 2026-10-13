@@ -1416,11 +1416,14 @@ static RISCVException read_hpmcounter(CPURISCVState *env, int csrno,
         return RISCV_EXCP_ILLEGAL_INST;
     }
 
-    if (csrno == CSR_CYCLE && env->virt_enabled &&
+    if ((csrno == CSR_CYCLE || csrno == CSR_INSTRET) && env->virt_enabled &&
         riscv_cpu_cfg(env)->ext_xcvhtime) {
-        /* vcycle = mcycle - hhidden_cycle */
+        /*
+         * vcycle = mcycle - hhidden_cycle,
+         * vinstret = minstret - hhidden_instret
+         */
         riscv_pmu_read_ctr(env, val, false, ctr_index);
-        *val -= env->hhidden_cycle;
+        *val -= csrno == CSR_CYCLE ? env->hhidden_cycle : env->hhidden_instret;
         return RISCV_EXCP_NONE;
     }
 

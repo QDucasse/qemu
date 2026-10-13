@@ -281,6 +281,8 @@
 #define CSR_XCV_HVTIMECMP       0x6C3
 #define CSR_XCV_HEXIT_CYCLE     0x6C4
 #define CSR_XCV_HHIDDEN_CYCLE   0x6C5
+#define CSR_XCV_HEXIT_INSTRET   0x6C6
+#define CSR_XCV_HHIDDEN_INSTRET 0x6C7
 #define XCV_HTIMECTL_HHAE       BIT(0)
 
 /* Hypervisor Configuration CSRs */

@@ -762,6 +762,8 @@ static void riscv_cpu_reset_hold(Object *obj, ResetType type)
     env->hvtimecmp = 0;
     env->hexit_cycle = 0;
     env->hhidden_cycle = 0;
+    env->hexit_instret = 0;
+    env->hhidden_instret = 0;
     env->hvti_irq = false;
     if (env->hvtimer) {
         timer_del(env->hvtimer);

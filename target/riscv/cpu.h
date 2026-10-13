@@ -366,6 +366,8 @@ struct CPUArchState {
     uint64_t hvtimecmp;
     uint64_t hexit_cycle;
     uint64_t hhidden_cycle;
+    uint64_t hexit_instret;
+    uint64_t hhidden_instret;
 
     /*
      * Bits VSSIP, VSTIP and VSEIP in hvip are maintained in mip. Other bits

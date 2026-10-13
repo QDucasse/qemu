@@ -2,7 +2,7 @@
  * CORE-V hidden-time CSRs (xcvhtime).
  *
  * Software-visible model of the CVA6 hidden-time extension: guest time and
- * cycle stop while the hart runs with V=0, if htimectl.HHAE=1.
+ * cycle (and instret) stop while the hart runs with V=0, if htimectl.HHAE=1.
  *
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
@@ -25,6 +25,15 @@ static uint64_t xcv_mcycle(CPURISCVState *env)
     return val;
 }
 
+/* Counts instructions only with -icount; otherwise host ticks, like mcycle */
+static uint64_t xcv_minstret(CPURISCVState *env)
+{
+    target_ulong val;
+
+    riscv_pmu_read_ctr(env, &val, false, 2);
+    return val;
+}
+
 /*
  * Called after every V change. Latch on V 1->0 whatever the target mode;
  * accumulate on V 0->1 if HHAE. Nested transitions (V->HS->M->HS->V) only
@@ -35,9 +44,11 @@ void riscv_xcvhtime_virt_changed(CPURISCVState *env, bool virt_en)
     if (!virt_en) {
         env->hexit_time = xcv_mtime(env);
         env->hexit_cycle = xcv_mcycle(env);
+        env->hexit_instret = xcv_minstret(env);
     } else if (env->htimectl & XCV_HTIMECTL_HHAE) {
         env->hhidden_time += xcv_mtime(env) - env->hexit_time;
         env->hhidden_cycle += xcv_mcycle(env) - env->hexit_cycle;
+        env->hhidden_instret += xcv_minstret(env) - env->hexit_instret;
     }
 
     riscv_timer_update_vtimers(env);
@@ -71,6 +82,10 @@ static uint64_t *xcv_csr_ptr(CPURISCVState *env, int csrno)
         return &env->hexit_cycle;
     case CSR_XCV_HHIDDEN_CYCLE:
         return &env->hhidden_cycle;
+    case CSR_XCV_HEXIT_INSTRET:
+        return &env->hexit_instret;
+    case CSR_XCV_HHIDDEN_INSTRET:
+        return &env->hhidden_instret;
     default:
         g_assert_not_reached();
     }
@@ -91,8 +106,9 @@ static RISCVException write_xcv(CPURISCVState *env, int csrno,
     }
     *xcv_csr_ptr(env, csrno) = val;
 
-    /* The cycle CSRs feed no comparator */
-    if (csrno != CSR_XCV_HEXIT_CYCLE && csrno != CSR_XCV_HHIDDEN_CYCLE) {
+    /* The cycle and instret CSRs feed no comparator */
+    if (csrno != CSR_XCV_HEXIT_CYCLE && csrno != CSR_XCV_HHIDDEN_CYCLE &&
+        csrno != CSR_XCV_HEXIT_INSTRET && csrno != CSR_XCV_HHIDDEN_INSTRET) {
         riscv_timer_update_vtimers(env);
     }
 
@@ -109,5 +125,7 @@ const RISCVCSR xcv_csr_list[] = {
     XCV_CSR(CSR_XCV_HVTIMECMP, "hvtimecmp"),
     XCV_CSR(CSR_XCV_HEXIT_CYCLE, "hexit_cycle"),
     XCV_CSR(CSR_XCV_HHIDDEN_CYCLE, "hhidden_cycle"),
+    XCV_CSR(CSR_XCV_HEXIT_INSTRET, "hexit_instret"),
+    XCV_CSR(CSR_XCV_HHIDDEN_INSTRET, "hhidden_instret"),
     { }
 };
