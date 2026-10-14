@@ -3,6 +3,7 @@
  *
  * Software-visible model of the CVA6 hidden-time extension: guest time and
  * cycle (and instret) stop while the hart runs with V=0, if htimectl.HHAE=1.
+ * htimectl.HFRZ (cache freeze) is only stored: QEMU has no caches to freeze.
  *
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
@@ -102,7 +103,7 @@ static RISCVException write_xcv(CPURISCVState *env, int csrno,
                                 target_ulong val, uintptr_t ra)
 {
     if (csrno == CSR_XCV_HTIMECTL) {
-        val &= XCV_HTIMECTL_HHAE;
+        val &= XCV_HTIMECTL_HHAE | XCV_HTIMECTL_HFRZ;
     }
     *xcv_csr_ptr(env, csrno) = val;
 

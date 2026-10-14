@@ -284,6 +284,7 @@
 #define CSR_XCV_HEXIT_INSTRET   0x6C6
 #define CSR_XCV_HHIDDEN_INSTRET 0x6C7
 #define XCV_HTIMECTL_HHAE       BIT(0)
+#define XCV_HTIMECTL_HFRZ       BIT(1)
 
 /* Hypervisor Configuration CSRs */
 #define CSR_HENVCFG         0x60A
