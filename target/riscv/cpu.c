@@ -2690,6 +2690,8 @@ static const Property riscv_cpu_properties[] = {
                        DEFAULT_RNMI_EXCPVEC),
 #endif
 
+    DEFINE_PROP_BOOL("xcvhtime-freeze", RISCVCPU, cfg.xcvhtime_freeze, true),
+
     DEFINE_PROP_BOOL("short-isa-string", RISCVCPU, cfg.short_isa_string, false),
 
     DEFINE_PROP_BOOL("rvv_ta_all_1s", RISCVCPU, cfg.rvv_ta_all_1s, false),

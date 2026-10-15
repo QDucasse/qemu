@@ -136,6 +136,8 @@ BOOL_FIELD(ext_ziccrse)
 
 /* Vendor-specific custom extensions */
 BOOL_FIELD(ext_xcvhtime)
+/* htimectl.HFRZ writable (CVA6 RVHiddenFreeze), only with xcvhtime */
+BOOL_FIELD(xcvhtime_freeze)
 BOOL_FIELD(ext_xtheadba)
 BOOL_FIELD(ext_xtheadbb)
 BOOL_FIELD(ext_xtheadbs)
