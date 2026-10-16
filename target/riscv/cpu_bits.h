@@ -1164,4 +1164,40 @@ typedef enum CTRType {
 #define MCONTEXT64                         0x0000000000001FFFULL
 #define MCONTEXT32_HCONTEXT                0x0000007F
 #define MCONTEXT64_HCONTEXT                0x0000000000003FFFULL
+
+/* JITDomain (xjitdomain), RV64 only */
+#define CSR_DSTATUS             0x5C0
+#define CSR_DRIGHTS0            0x5C1
+#define CSR_DRIGHTS1            0x5C2
+#define CSR_DRIGHTS2            0x5C3
+#define CSR_DTARGET             0x5C4
+#define CSR_DGATE               0x5C5
+#define CSR_DSP                 0x5C6
+#define CSR_DCAUSE              0xDC0
+#define CSR_CURDOM              0xCC0
+#define CSR_DMPCFG0             0x7C3
+#define CSR_DMPCFG1             0x7C4
+#define CSR_MDSTATUS            0x7C5
+
+#define DSTATUS_EN              BIT(0)
+#define DSTATUS_SPD             0x0000000E
+#define DSTATUS_SPPEND          0x0001FFF0
+#define DSTATUS_DRSKEY          0x000E0000
+#define DSTATUS_SCHK            BIT(20)
+
+#define MDSTATUS_MPD            0x0000000E
+#define MDSTATUS_MPPEND         0x0001FFF0
+
+/* Packed dpend, as held in env->dpend, xPPEND and curdom[15:3] */
+#define DPEND_DOM               0x0007
+#define DPEND_LABEL             0x0FF8
+#define DPEND_VALID             0x1000
+
+#define CURDOM_DOM              0x0007
+#define CURDOM_PEND             0xFFF8
+
+#define DMPCFG_K                0x7
+#define DMPCFG_L                0x8
+
+#define JITDOMAIN_NDOMS         8
 #endif

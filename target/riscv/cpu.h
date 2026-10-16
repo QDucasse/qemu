@@ -261,6 +261,18 @@ struct CPUArchState {
     bool      elp;
     /* shadow stack register for zicfiss extension */
     target_ulong ssp;
+
+    /* xjitdomain: current domain and pending entry (DPEND_* layout) */
+    uint64_t curdom;
+    uint64_t dpend;
+    uint64_t dstatus;
+    uint64_t mdstatus;
+    uint64_t drights[3];
+    uint64_t dtarget;
+    uint64_t dgate;
+    uint64_t dsp;
+    uint64_t dcause;
+    uint8_t dmpcfg[MAX_RISCV_PMPS];
     /* env place holder for extra word 2 during unwind */
     target_ulong excp_uw2;
     /* sw check code for sw check exception */
@@ -984,6 +996,10 @@ const char *satp_mode_str(uint8_t satp_mode, bool is_32_bit);
 
 /* In th_csr.c */
 extern const RISCVCSR th_csr_list[];
+
+/* In xjitdomain_csr.c */
+extern const RISCVCSR xjitdomain_csr_list[];
+void xjitdomain_reset(CPURISCVState *env);
 
 const char *priv_spec_to_str(int priv_version);
 #endif /* RISCV_CPU_H */

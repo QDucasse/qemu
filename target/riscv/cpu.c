@@ -775,6 +775,8 @@ static void riscv_cpu_reset_hold(Object *obj, ResetType type)
     /* on reset ssp is set to 0 */
     env->ssp = 0;
 
+    xjitdomain_reset(env);
+
     env->xl = riscv_cpu_mxl(env);
     cs->exception_index = RISCV_EXCP_NONE;
     env->load_res = -1;
@@ -1143,6 +1145,8 @@ static void riscv_cpu_init(Object *obj)
     if (mcc->def->custom_csrs) {
         riscv_register_custom_csrs(cpu, mcc->def->custom_csrs);
     }
+    /* Properties are not parsed yet: the predicates check ext_xjitdomain */
+    riscv_register_custom_csrs(cpu, xjitdomain_csr_list);
 #endif
 
     accel_cpu_instance_init(CPU(obj));

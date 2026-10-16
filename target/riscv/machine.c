@@ -401,6 +401,33 @@ static const VMStateDescription vmstate_ssp = {
     }
 };
 
+static bool jitdomain_needed(void *opaque)
+{
+    RISCVCPU *cpu = opaque;
+
+    return cpu->cfg.ext_xjitdomain;
+}
+
+static const VMStateDescription vmstate_jitdomain = {
+    .name = "cpu/jitdomain",
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .needed = jitdomain_needed,
+    .fields = (const VMStateField[]) {
+        VMSTATE_UINT64(env.curdom, RISCVCPU),
+        VMSTATE_UINT64(env.dpend, RISCVCPU),
+        VMSTATE_UINT64(env.dstatus, RISCVCPU),
+        VMSTATE_UINT64(env.mdstatus, RISCVCPU),
+        VMSTATE_UINT64_ARRAY(env.drights, RISCVCPU, 3),
+        VMSTATE_UINT64(env.dtarget, RISCVCPU),
+        VMSTATE_UINT64(env.dgate, RISCVCPU),
+        VMSTATE_UINT64(env.dsp, RISCVCPU),
+        VMSTATE_UINT64(env.dcause, RISCVCPU),
+        VMSTATE_UINT8_ARRAY(env.dmpcfg, RISCVCPU, MAX_RISCV_PMPS),
+        VMSTATE_END_OF_LIST()
+    }
+};
+
 static bool sstc_timer_needed(void *opaque)
 {
     RISCVCPU *cpu = opaque;
@@ -500,6 +527,7 @@ const VMStateDescription vmstate_riscv_cpu = {
         &vmstate_jvt,
         &vmstate_elp,
         &vmstate_ssp,
+        &vmstate_jitdomain,
         &vmstate_ctr,
         &vmstate_sstc,
         NULL
