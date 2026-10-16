@@ -57,6 +57,14 @@ G_NORETURN void riscv_raise_exception(CPURISCVState *env,
     cpu_loop_exit_restore(cs, pc);
 }
 
+/* xjitdomain: dcause holds the subcode, xtval the pc of the instruction */
+G_NORETURN void riscv_raise_domain_cfi(CPURISCVState *env, uint64_t subcode,
+                                       uintptr_t pc)
+{
+    env->dcause = subcode;
+    riscv_raise_exception(env, RISCV_EXCP_DOMAIN_CFI_FAULT, pc);
+}
+
 void helper_raise_exception(CPURISCVState *env, uint32_t exception)
 {
     riscv_raise_exception(env, exception, 0);

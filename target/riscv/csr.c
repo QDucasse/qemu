@@ -2189,7 +2189,13 @@ static RISCVException read_medeleg(CPURISCVState *env, int csrno,
 static RISCVException write_medeleg(CPURISCVState *env, int csrno,
                                     target_ulong val, uintptr_t ra)
 {
-    env->medeleg = (env->medeleg & ~DELEGABLE_EXCPS) | (val & DELEGABLE_EXCPS);
+    uint64_t mask = DELEGABLE_EXCPS;
+
+    if (riscv_cpu_cfg(env)->ext_xjitdomain) {
+        mask |= (1ULL << RISCV_EXCP_DOMAIN_ACCESS_FAULT) |
+                (1ULL << RISCV_EXCP_DOMAIN_CFI_FAULT);
+    }
+    env->medeleg = (env->medeleg & ~mask) | (val & mask);
     return RISCV_EXCP_NONE;
 }
 

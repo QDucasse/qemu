@@ -782,6 +782,8 @@ typedef enum RISCVException {
     RISCV_EXCP_LOAD_GUEST_ACCESS_FAULT = 0x15,
     RISCV_EXCP_VIRT_INSTRUCTION_FAULT = 0x16,
     RISCV_EXCP_STORE_GUEST_AMO_ACCESS_FAULT = 0x17,
+    RISCV_EXCP_DOMAIN_ACCESS_FAULT = 0x18, /* xjitdomain */
+    RISCV_EXCP_DOMAIN_CFI_FAULT = 0x19, /* xjitdomain */
     RISCV_EXCP_SEMIHOST = 0x3f,
 } RISCVException;
 
@@ -1200,4 +1202,9 @@ typedef enum CTRType {
 #define DMPCFG_L                0x8
 
 #define JITDOMAIN_NDOMS         8
+
+/* Domain CFI fault subcodes, in dcause */
+#define DCAUSE_LPAD             1
+#define DCAUSE_DRS              2
+#define DCAUSE_GATE             3
 #endif
