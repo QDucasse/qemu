@@ -1198,6 +1198,14 @@ typedef enum CTRType {
 #define CURDOM_DOM              0x0007
 #define CURDOM_PEND             0xFFF8
 
+/* Key in leaf PTE bits [56:54], reserved again when dstatus.EN = 0 */
+#define PTE_DOMKEY              0x01C0000000000000ULL
+
+/* drights entry {X, W, R} */
+#define DRIGHT_R                0x1
+#define DRIGHT_W                0x2
+#define DRIGHT_X                0x4
+
 #define DMPCFG_K                0x7
 #define DMPCFG_L                0x8
 

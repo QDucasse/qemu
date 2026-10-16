@@ -1139,6 +1139,18 @@ static bool gen_unary_per_ol(DisasContext *ctx, arg_r2 *a, DisasExtend ext,
     return gen_unary(ctx, a, ext, f_tl);
 }
 
+/*
+ * xjitdomain: tell the access check which kind of access the next memory
+ * operation is, then XJITDOMAIN_ACCESS_ORDINARY again once it is done
+ */
+static void gen_dom_access(DisasContext *ctx, XJitDomainAccess kind)
+{
+    if (ctx->cfg_ptr->ext_xjitdomain) {
+        tcg_gen_st_i32(tcg_constant_i32(kind), tcg_env,
+                       offsetof(CPURISCVState, dom_access));
+    }
+}
+
 static bool gen_amo(DisasContext *ctx, arg_atomic *a,
                     void(*func)(TCGv, TCGv, TCGv, TCGArg, MemOp),
                     MemOp mop)
@@ -1156,7 +1168,9 @@ static bool gen_amo(DisasContext *ctx, arg_atomic *a,
 
     decode_save_opc(ctx, RISCV_UW2_ALWAYS_STORE_AMO);
     src1 = get_address(ctx, a->rs1, 0);
+    gen_dom_access(ctx, XJITDOMAIN_ACCESS_AMO);
     func(dest, src1, src2, ctx->mem_idx, mop);
+    gen_dom_access(ctx, XJITDOMAIN_ACCESS_ORDINARY);
 
     gen_set_gpr(ctx, a->rd, dest);
     return true;
@@ -1170,7 +1184,9 @@ static bool gen_cmpxchg(DisasContext *ctx, arg_atomic *a, MemOp mop)
 
     mop |= mo_endian(ctx);
     decode_save_opc(ctx, RISCV_UW2_ALWAYS_STORE_AMO);
+    gen_dom_access(ctx, XJITDOMAIN_ACCESS_AMO);
     tcg_gen_atomic_cmpxchg_tl(dest, src1, dest, src2, ctx->mem_idx, mop);
+    gen_dom_access(ctx, XJITDOMAIN_ACCESS_ORDINARY);
 
     gen_set_gpr(ctx, a->rd, dest);
     return true;

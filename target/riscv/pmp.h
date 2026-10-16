@@ -80,6 +80,8 @@ bool pmp_hart_has_privs(CPURISCVState *env, hwaddr addr,
                         pmp_priv_t *allowed_privs,
                         target_ulong mode);
 target_ulong pmp_get_tlb_size(CPURISCVState *env, hwaddr addr);
+int pmp_find_entry(CPURISCVState *env, hwaddr addr, target_ulong size,
+                   bool *locked);
 void pmp_update_rule_addr(CPURISCVState *env, uint32_t pmp_index);
 void pmp_update_rule_nums(CPURISCVState *env);
 uint32_t pmp_get_num_rules(CPURISCVState *env);

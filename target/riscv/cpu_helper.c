@@ -1184,12 +1184,16 @@ static bool check_svukte_addr(CPURISCVState *env, vaddr addr)
  * @two_stage: Are we going to perform two stage translation
  * @is_debug: Is this access from a debugger or the monitor?
  */
+/*
+ * dom_key, if not NULL, receives the xjitdomain key of the leaf PTE, or -1
+ * when the access is not translated and the key comes from the PMP.
+ */
 static int get_physical_address(CPURISCVState *env, hwaddr *physical,
                                 int *ret_prot, vaddr addr,
                                 target_ulong *fault_pte_addr,
                                 int access_type, int mmu_idx,
                                 bool first_stage, bool two_stage,
-                                bool is_debug, bool is_probe)
+                                bool is_debug, bool is_probe, int *dom_key)
 {
     /*
      * NOTE: the env->pc value visible here will not be
@@ -1206,6 +1210,10 @@ static int get_physical_address(CPURISCVState *env, hwaddr *physical,
     target_ulong napot_mask;
     bool is_sstack_idx = ((mmu_idx & MMU_IDX_SS_WRITE) == MMU_IDX_SS_WRITE);
     bool sstack_page = false;
+
+    if (dom_key) {
+        *dom_key = -1;
+    }
 
     if (do_svukte_check(env, first_stage, mode, virt) &&
         !check_svukte_addr(env, addr)) {
@@ -1310,6 +1318,11 @@ static int get_physical_address(CPURISCVState *env, hwaddr *physical,
     bool svadu = riscv_cpu_cfg(env)->ext_svadu;
     bool adue = svadu ? env->menvcfg & MENVCFG_ADUE : !svade;
     bool svrsw60t59b = riscv_cpu_cfg(env)->ext_svrsw60t59b;
+    /* xjitdomain: with dstatus.EN, leaf PTEs carry a key in reserved bits */
+    bool dom_keys = first_stage && riscv_cpu_cfg(env)->ext_xjitdomain &&
+                    (env->dstatus & DSTATUS_EN);
+    uint64_t pte_rsvd = PTE_RESERVED(svrsw60t59b) &
+                        ~(dom_keys ? PTE_DOMKEY : 0);
 
     if (first_stage && two_stage && env->virt_enabled) {
         pbmte = pbmte && (env->henvcfg & HENVCFG_PBMTE);
@@ -1342,7 +1355,7 @@ static int get_physical_address(CPURISCVState *env, hwaddr *physical,
             int vbase_ret = get_physical_address(env, &vbase, &vbase_prot,
                                                  base, NULL, MMU_DATA_LOAD,
                                                  MMUIdx_U, false, true,
-                                                 is_debug, false);
+                                                 is_debug, false, NULL);
 
             if (vbase_ret != TRANSLATE_SUCCESS) {
                 if (fault_pte_addr) {
@@ -1377,7 +1390,7 @@ static int get_physical_address(CPURISCVState *env, hwaddr *physical,
         if (riscv_cpu_sxl(env) == MXL_RV32) {
             ppn = pte >> PTE_PPN_SHIFT;
         } else {
-            if (pte & PTE_RESERVED(svrsw60t59b)) {
+            if (pte & pte_rsvd) {
                 qemu_log_mask(LOG_GUEST_ERROR, "%s: reserved bits set in PTE: "
                               "addr: 0x%" HWADDR_PRIx " pte: 0x" TARGET_FMT_lx "\n",
                               __func__, pte_addr, pte);
@@ -1414,8 +1427,9 @@ static int get_physical_address(CPURISCVState *env, hwaddr *physical,
             goto leaf;
         }
 
-        if (pte & (PTE_D | PTE_A | PTE_U | PTE_ATTR)) {
-            /* D, A, and U bits are reserved in non-leaf/inner PTEs */
+        if (pte & (PTE_D | PTE_A | PTE_U | PTE_ATTR |
+                   (dom_keys ? PTE_DOMKEY : 0))) {
+            /* D, A, U and key bits are reserved in non-leaf/inner PTEs */
             qemu_log_mask(LOG_GUEST_ERROR, "%s: D, A, or U bits set in non-leaf PTE: "
                           "addr: 0x%" HWADDR_PRIx " pte: 0x" TARGET_FMT_lx "\n",
                           __func__, pte_addr, pte);
@@ -1610,6 +1624,9 @@ static int get_physical_address(CPURISCVState *env, hwaddr *physical,
         prot &= ~PAGE_WRITE;
     }
     *ret_prot = prot;
+    if (dom_key) {
+        *dom_key = get_field(pte, PTE_DOMKEY);
+    }
 
     return TRANSLATE_SUCCESS;
 }
@@ -1666,13 +1683,14 @@ hwaddr riscv_cpu_get_phys_page_debug(CPUState *cs, vaddr addr)
     int mmu_idx = riscv_env_mmu_index(&cpu->env, false);
 
     if (get_physical_address(env, &phys_addr, &prot, addr, NULL, 0, mmu_idx,
-                             true, env->virt_enabled, true, false)) {
+                             true, env->virt_enabled, true, false, NULL)) {
         return -1;
     }
 
     if (env->virt_enabled) {
         if (get_physical_address(env, &phys_addr, &prot, phys_addr, NULL,
-                                 0, MMUIdx_U, false, true, true, false)) {
+                                 0, MMUIdx_U, false, true, true, false,
+                                 NULL)) {
             return -1;
         }
     }
@@ -1758,6 +1776,91 @@ static void pmu_tlb_fill_incr_ctr(RISCVCPU *cpu, MMUAccessType access_type)
     riscv_pmu_incr_ctr(cpu, pmu_event_type);
 }
 
+static bool xjitdomain_checking(CPURISCVState *env)
+{
+    return riscv_cpu_cfg(env)->ext_xjitdomain && (env->dstatus & DSTATUS_EN);
+}
+
+/* drights2:drights1:drights0, {X, W, R} at bit 3 * (8 * e + k) */
+static int xjitdomain_rights(CPURISCVState *env, uint64_t e, uint64_t k)
+{
+    int rights = 0;
+
+    for (int b = 0; b < 3; b++) {
+        int bit = 3 * (JITDOMAIN_NDOMS * e + k) + b;
+        rights |= ((env->drights[bit / 64] >> (bit % 64)) & 1) << b;
+    }
+    return rights;
+}
+
+/*
+ * The xjitdomain access check, after translation and the base PMP/PTE
+ * checks. pte_key is the key of the leaf PTE, or -1 to take it from the
+ * PMP entry that pa matched. prot is narrowed to the rights the domain
+ * grants, so that an AMO is also checked for read.
+ */
+static bool xjitdomain_check(CPURISCVState *env, hwaddr pa, int size,
+                             MMUAccessType access_type, int mode,
+                             int pte_key, int *prot)
+{
+    uint64_t key = 0;
+    bool pmp_locked = false;
+
+    if (pte_key >= 0) {
+        key = pte_key;
+    } else if (riscv_cpu_cfg(env)->pmp) {
+        int i = pmp_find_entry(env, pa, size, &pmp_locked);
+
+        if (i >= 0) {
+            key = env->dmpcfg[i] & DMPCFG_K;
+        }
+    }
+
+    /* Only implicit DRS accesses may touch DRS pages from U mode */
+    if (key == get_field(env->dstatus, DSTATUS_DRSKEY) && mode == PRV_U) {
+        return false;
+    }
+
+    bool checked = mode == PRV_U ||
+                   (mode == PRV_S && (env->dstatus & DSTATUS_SCHK)) ||
+                   (mode == PRV_M && pmp_locked);
+    if (!checked) {
+        return true;
+    }
+
+    uint64_t e = env->curdom;
+    uint64_t e_fetch = (env->dpend & DPEND_VALID) ?
+                       get_field(env->dpend, DPEND_DOM) : env->curdom;
+    int rights = xjitdomain_rights(env, e, key);
+    int dom_prot = 0;
+
+    if (rights & DRIGHT_R) {
+        dom_prot |= PAGE_READ;
+    }
+    if (rights & DRIGHT_W) {
+        dom_prot |= PAGE_WRITE;
+    }
+    if (xjitdomain_rights(env, e_fetch, key) & DRIGHT_X) {
+        dom_prot |= PAGE_EXEC;
+    }
+    /* LR, AMOs and SC need R and W */
+    if ((env->dom_access == XJITDOMAIN_ACCESS_LR ||
+         env->dom_access == XJITDOMAIN_ACCESS_AMO) &&
+        (rights & (DRIGHT_R | DRIGHT_W)) != (DRIGHT_R | DRIGHT_W)) {
+        dom_prot &= ~(PAGE_READ | PAGE_WRITE);
+    }
+    *prot &= dom_prot;
+
+    switch (access_type) {
+    case MMU_INST_FETCH:
+        return dom_prot & PAGE_EXEC;
+    case MMU_DATA_LOAD:
+        return dom_prot & PAGE_READ;
+    default:
+        return dom_prot & PAGE_WRITE;
+    }
+}
+
 bool riscv_cpu_tlb_fill(CPUState *cs, vaddr address, int size,
                         MMUAccessType access_type, int mmu_idx,
                         bool probe, uintptr_t retaddr)
@@ -1775,6 +1878,7 @@ bool riscv_cpu_tlb_fill(CPUState *cs, vaddr address, int size,
     int mode = mmuidx_priv(mmu_idx);
     /* default TLB page size */
     hwaddr tlb_size = TARGET_PAGE_SIZE;
+    int dom_key = -1;
 
     env->guest_phys_fault_addr = 0;
 
@@ -1782,11 +1886,22 @@ bool riscv_cpu_tlb_fill(CPUState *cs, vaddr address, int size,
                   __func__, address, access_type, mmu_idx);
 
     pmu_tlb_fill_incr_ctr(cpu, access_type);
+
+    /*
+     * xjitdomain: TCG may split an AMO into a load and a store. Check the
+     * load as the store, so that the base PTE/PMP checks for a store come
+     * before the domain check, as for a single access.
+     */
+    if (xjitdomain_checking(env) && env->dom_access == XJITDOMAIN_ACCESS_AMO) {
+        access_type = MMU_DATA_STORE;
+    }
+
     if (two_stage_lookup) {
         /* Two stage lookup */
         ret = get_physical_address(env, &pa, &prot, address,
                                    &env->guest_phys_fault_addr, access_type,
-                                   mmu_idx, true, true, false, probe);
+                                   mmu_idx, true, true, false, probe,
+                                   &dom_key);
 
         /*
          * A G-stage exception may be triggered during two state lookup.
@@ -1809,7 +1924,7 @@ bool riscv_cpu_tlb_fill(CPUState *cs, vaddr address, int size,
 
             ret = get_physical_address(env, &pa, &prot2, im_address, NULL,
                                        access_type, MMUIdx_U, false, true,
-                                       false, probe);
+                                       false, probe, NULL);
 
             qemu_log_mask(CPU_LOG_MMU,
                           "%s 2nd-stage address=%" VADDR_PRIx
@@ -1847,7 +1962,7 @@ bool riscv_cpu_tlb_fill(CPUState *cs, vaddr address, int size,
         /* Single stage lookup */
         ret = get_physical_address(env, &pa, &prot, address, NULL,
                                    access_type, mmu_idx, true, false, false,
-                                   probe);
+                                   probe, &dom_key);
 
         qemu_log_mask(CPU_LOG_MMU,
                       "%s address=%" VADDR_PRIx " ret %d physical "
@@ -1870,6 +1985,26 @@ bool riscv_cpu_tlb_fill(CPUState *cs, vaddr address, int size,
 
     if (ret == TRANSLATE_PMP_FAIL) {
         pmp_violation = true;
+    }
+
+    /*
+     * xjitdomain: the domain check follows the base PMP/PTE checks. The
+     * result depends on the current domain, which the TLB does not record,
+     * so the entry is used for this access only.
+     */
+    if (ret == TRANSLATE_SUCCESS && xjitdomain_checking(env)) {
+        tlb_size = 1;
+        if (!xjitdomain_check(env, pa, size, access_type, mode, dom_key,
+                              &prot)) {
+            if (probe) {
+                return false;
+            }
+            env->badaddr = address;
+            env->two_stage_lookup = two_stage_lookup;
+            env->two_stage_indirect_lookup = false;
+            cs->exception_index = RISCV_EXCP_DOMAIN_ACCESS_FAULT;
+            cpu_loop_exit_restore(cs, retaddr);
+        }
     }
 
     if (ret == TRANSLATE_SUCCESS) {
@@ -2493,6 +2628,8 @@ void riscv_cpu_do_interrupt(CPUState *cs)
      * unconditionally.
      */
     env->elp = false;
+    /* An access marked LR may have trapped before its marker was cleared */
+    env->dom_access = XJITDOMAIN_ACCESS_ORDINARY;
 
     /*
      * NOTE: it is not necessary to yield load reservations here. It is only

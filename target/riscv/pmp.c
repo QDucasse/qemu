@@ -351,6 +351,43 @@ static bool pmp_hart_has_privs_default(CPURISCVState *env, pmp_priv_t privs,
  * Public Interface
  */
 
+static int pmp_access_size(CPURISCVState *env, hwaddr addr,
+                           target_ulong size)
+{
+    if (size != 0) {
+        return size;
+    }
+    if (riscv_cpu_cfg(env)->mmu) {
+        /*
+         * If size is unknown (0), assume that all bytes
+         * from addr to the end of the page will be accessed.
+         */
+        return -(addr | TARGET_PAGE_MASK);
+    }
+    return 2 << riscv_cpu_mxl(env);
+}
+
+/*
+ * xjitdomain: the entry that an access passing the PMP check matched, by
+ * the same priority rule, or -1 if none did. Its dmpcfg nibble gives the key.
+ */
+int pmp_find_entry(CPURISCVState *env, hwaddr addr, target_ulong size,
+                   bool *locked)
+{
+    int pmp_size = pmp_access_size(env, addr, size);
+
+    for (int i = 0; i < riscv_cpu_cfg(env)->pmp_regions; i++) {
+        if (pmp_get_a_field(env->pmp_state.pmp[i].cfg_reg) != PMP_AMATCH_OFF &&
+            pmp_is_in_range(env, i, addr) &&
+            pmp_is_in_range(env, i, addr + pmp_size - 1)) {
+            *locked = pmp_is_locked(env, i);
+            return i;
+        }
+    }
+    *locked = false;
+    return -1;
+}
+
 /*
  * Check if the address has required RWX privs to complete desired operation
  * Return true if a pmp rule match or default match
@@ -371,19 +408,7 @@ bool pmp_hart_has_privs(CPURISCVState *env, hwaddr addr,
         return pmp_hart_has_privs_default(env, privs, allowed_privs, mode);
     }
 
-    if (size == 0) {
-        if (riscv_cpu_cfg(env)->mmu) {
-            /*
-             * If size is unknown (0), assume that all bytes
-             * from addr to the end of the page will be accessed.
-             */
-            pmp_size = -(addr | TARGET_PAGE_MASK);
-        } else {
-            pmp_size = 2 << riscv_cpu_mxl(env);
-        }
-    } else {
-        pmp_size = size;
-    }
+    pmp_size = pmp_access_size(env, addr, size);
 
     /*
      * 1.10 draft priv spec states there is an implicit order

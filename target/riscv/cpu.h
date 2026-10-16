@@ -126,6 +126,13 @@ enum {
 #define VEXT_VERSION_1_00_0 0x00010000
 #define VEXT_VER_1_00_0_STR "v1.0"
 
+/* xjitdomain: env->dom_access */
+typedef enum {
+    XJITDOMAIN_ACCESS_ORDINARY,
+    XJITDOMAIN_ACCESS_LR,       /* needs R and W */
+    XJITDOMAIN_ACCESS_AMO,      /* AMO, SC: checked as a store needing R */
+} XJitDomainAccess;
+
 enum {
     TRANSLATE_SUCCESS,
     TRANSLATE_FAIL,
@@ -273,6 +280,8 @@ struct CPUArchState {
     uint64_t dsp;
     uint64_t dcause;
     uint8_t dmpcfg[MAX_RISCV_PMPS];
+    /* Kind of the access in progress, set by translated code */
+    uint32_t dom_access;
     /* env place holder for extra word 2 during unwind */
     target_ulong excp_uw2;
     /* sw check code for sw check exception */
