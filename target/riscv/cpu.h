@@ -131,6 +131,7 @@ typedef enum {
     XJITDOMAIN_ACCESS_ORDINARY,
     XJITDOMAIN_ACCESS_LR,       /* needs R and W */
     XJITDOMAIN_ACCESS_AMO,      /* AMO, SC: checked as a store needing R */
+    XJITDOMAIN_ACCESS_TYPED,    /* dl*, ds*: checked for dtarget[curdom] */
 } XJitDomainAccess;
 
 enum {

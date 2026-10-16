@@ -1829,6 +1829,9 @@ static bool xjitdomain_check(CPURISCVState *env, hwaddr pa, int size,
     }
 
     uint64_t e = env->curdom;
+    if (env->dom_access == XJITDOMAIN_ACCESS_TYPED) {
+        e = (env->dtarget >> (3 * env->curdom)) & 7;
+    }
     uint64_t e_fetch = (env->dpend & DPEND_VALID) ?
                        get_field(env->dpend, DPEND_DOM) : env->curdom;
     int rights = xjitdomain_rights(env, e, key);
