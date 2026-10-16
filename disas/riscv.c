@@ -3978,6 +3978,10 @@ static void decode_inst_opcode(rv_decode *dec, rv_isa isa)
             }
             break;
         case 22:
+            /* custom-2 below RV128 */
+            if (isa != rv128) {
+                break;
+            }
             switch ((inst >> 12) & 0b111) {
             case 0: op = rv_op_addid; break;
             case 1:
