@@ -626,6 +626,12 @@ void riscv_cpu_validate_set_extensions(RISCVCPU *cpu, Error **errp)
         return;
     }
 
+    if (cpu->cfg.ext_xjitdomain &&
+        (!riscv_has_ext(env, RVS) || mcc->def->misa_mxl_max != MXL_RV64)) {
+        error_setg(errp, "xjitdomain requires RV64 and the S extension");
+        return;
+    }
+
     if (riscv_has_ext(env, RVS) && !riscv_has_ext(env, RVU)) {
         error_setg(errp,
                    "Setting S extension without U extension is illegal");
