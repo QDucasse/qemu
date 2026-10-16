@@ -26,6 +26,7 @@
 /* Vendor extensions */
 #include "disas/riscv-xthead.h"
 #include "disas/riscv-xventana.h"
+#include "disas/riscv-xjitdomain.h"
 
 typedef enum {
     /* 0 is reserved for rv_op_illegal. */
@@ -2429,6 +2430,13 @@ static const char *csr_name(int csrno)
     case 0x03ed: return "pmpaddr61";
     case 0x03ee: return "pmpaddr62";
     case 0x03ef: return "pmpaddr63";
+    case 0x05c0: return "dstatus";
+    case 0x05c1: return "drights0";
+    case 0x05c2: return "drights1";
+    case 0x05c3: return "drights2";
+    case 0x05c4: return "dtarget";
+    case 0x05c5: return "dgate";
+    case 0x05c6: return "dsp";
     case 0x0780: return "mtohost";
     case 0x0781: return "mfromhost";
     case 0x0782: return "mreset";
@@ -2443,6 +2451,10 @@ static const char *csr_name(int csrno)
     case 0x07b1: return "dpc";
     case 0x07b2: return "dscratch0";
     case 0x07b3: return "dscratch1";
+    case 0x07c3: return "dmpcfg0";
+    case 0x07c4: return "dmpcfg1";
+    case 0x07c5: return "mdstatus";
+    case 0x07c6: return "mndstatus";
     case 0x0b00: return "mcycle";
     case 0x0b01: return "mtime";
     case 0x0b02: return "minstret";
@@ -2516,12 +2528,14 @@ static const char *csr_name(int csrno)
     case 0x0c80: return "cycleh";
     case 0x0c81: return "timeh";
     case 0x0c82: return "instreth";
+    case 0x0cc0: return "curdom";
     case 0x0d00: return "scycle";
     case 0x0d01: return "stime";
     case 0x0d02: return "sinstret";
     case 0x0d80: return "scycleh";
     case 0x0d81: return "stimeh";
     case 0x0d82: return "sinstreth";
+    case 0x0dc0: return "dcause";
     case 0x0e00: return "hcycle";
     case 0x0e01: return "htime";
     case 0x0e02: return "hinstret";
@@ -4557,6 +4571,16 @@ static uint32_t operand_lpl(rv_inst inst)
     return inst >> 12;
 }
 
+static uint32_t operand_dom(rv_inst inst)
+{
+    return (inst >> 29) & 0b111;
+}
+
+static uint32_t operand_domlabel(rv_inst inst)
+{
+    return (inst >> 20) & 0b111111111;
+}
+
 /* decode operands */
 
 static void decode_inst_operands(rv_decode *dec, rv_isa isa)
@@ -4951,6 +4975,12 @@ static void decode_inst_operands(rv_decode *dec, rv_isa isa)
         dec->rd = rv_ireg_zero;
         dec->rs1 = dec->rs2 = operand_crs1(inst);
         dec->imm = 0;
+        break;
+    case rv_codec_dom:
+        dec->rd = operand_rd(inst);
+        dec->rs1 = operand_rs1(inst);
+        dec->imm = operand_dom(inst);
+        dec->imm1 = operand_domlabel(inst);
         break;
     };
 }
@@ -5438,6 +5468,7 @@ static GString *disasm_inst(rv_isa isa, uint64_t pc, rv_inst inst,
         { has_xtheadmempair_p, xthead_opcode_data, decode_xtheadmempair },
         { has_xtheadsync_p, xthead_opcode_data, decode_xtheadsync },
         { has_XVentanaCondOps_p, ventana_opcode_data, decode_xventanacondops },
+        { has_xjitdomain_p, xjitdomain_opcode_data, decode_xjitdomain },
     };
 
     for (size_t i = 0; i < ARRAY_SIZE(decoders); i++) {
