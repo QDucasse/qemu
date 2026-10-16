@@ -62,6 +62,30 @@ void xjitdomain_reset(CPURISCVState *env)
     memset(env->dmpcfg, 0, sizeof(env->dmpcfg));
 }
 
+/*
+ * A trap saves {curdom, dpend} in xPD/xPPEND and enters DOM0; xret restores
+ * them. dstatus.SPD/SPPEND and mdstatus.MPD/MPPEND share bit positions.
+ */
+void xjitdomain_save_on_trap(CPURISCVState *env, uint64_t *xdstatus)
+{
+    if (!riscv_cpu_cfg(env)->ext_xjitdomain) {
+        return;
+    }
+    *xdstatus = set_field(*xdstatus, DSTATUS_SPD, env->curdom);
+    *xdstatus = set_field(*xdstatus, DSTATUS_SPPEND, env->dpend);
+    env->curdom = 0;
+    env->dpend = 0;
+}
+
+void xjitdomain_restore_on_xret(CPURISCVState *env, uint64_t xdstatus)
+{
+    if (!riscv_cpu_cfg(env)->ext_xjitdomain) {
+        return;
+    }
+    env->curdom = get_field(xdstatus, DSTATUS_SPD);
+    env->dpend = get_field(xdstatus, DSTATUS_SPPEND);
+}
+
 static uint64_t *xjitdomain_csr_ptr(CPURISCVState *env, int csrno)
 {
     switch (csrno) {

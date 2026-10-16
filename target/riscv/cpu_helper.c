@@ -2327,6 +2327,7 @@ void riscv_cpu_do_interrupt(CPUState *cs)
         if (cpu_get_fcfien(env)) {
             env->mstatus = set_field(env->mstatus, MSTATUS_SPELP, env->elp);
         }
+        xjitdomain_save_on_trap(env, &env->dstatus);
 
         if (riscv_has_ext(env, RVH)) {
             if (vsmode_exc) {
@@ -2395,6 +2396,10 @@ void riscv_cpu_do_interrupt(CPUState *cs)
             } else {
                 env->mstatus = set_field(env->mstatus, MSTATUS_MPELP, env->elp);
             }
+        }
+        /* An RNMI exception has no mnstatus copy of the domain */
+        if (!nnmi_excep) {
+            xjitdomain_save_on_trap(env, &env->mdstatus);
         }
 
         if (riscv_has_ext(env, RVH)) {

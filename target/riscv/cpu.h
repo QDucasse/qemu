@@ -1002,6 +1002,8 @@ extern const RISCVCSR th_csr_list[];
 /* In xjitdomain_csr.c */
 extern const RISCVCSR xjitdomain_csr_list[];
 void xjitdomain_reset(CPURISCVState *env);
+void xjitdomain_save_on_trap(CPURISCVState *env, uint64_t *xdstatus);
+void xjitdomain_restore_on_xret(CPURISCVState *env, uint64_t xdstatus);
 
 const char *priv_spec_to_str(int priv_version);
 #endif /* RISCV_CPU_H */
