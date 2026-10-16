@@ -133,6 +133,8 @@ typedef enum {
     XJITDOMAIN_ACCESS_AMO,      /* AMO, SC: checked as a store needing R */
     XJITDOMAIN_ACCESS_TYPED,    /* dl*, ds*: checked for dtarget[curdom] */
     XJITDOMAIN_ACCESS_DRS,      /* implicit DRS access of domcall/domret */
+    XJITDOMAIN_ACCESS_CBO,      /* cbo.*: needs W, whatever the probe type */
+    XJITDOMAIN_ACCESS_UNCHECKED, /* base PMP/PTE checks only */
 } XJitDomainAccess;
 
 enum {

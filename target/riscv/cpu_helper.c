@@ -1806,6 +1806,9 @@ static bool xjitdomain_check(CPURISCVState *env, hwaddr pa, int size,
     uint64_t key = 0;
     bool pmp_locked = false;
 
+    if (env->dom_access == XJITDOMAIN_ACCESS_UNCHECKED) {
+        return true;
+    }
     if (pte_key >= 0) {
         key = pte_key;
     } else if (riscv_cpu_cfg(env)->pmp) {
@@ -1859,6 +1862,13 @@ static bool xjitdomain_check(CPURISCVState *env, hwaddr pa, int size,
          env->dom_access == XJITDOMAIN_ACCESS_AMO) &&
         (rights & (DRIGHT_R | DRIGHT_W)) != (DRIGHT_R | DRIGHT_W)) {
         dom_prot &= ~(PAGE_READ | PAGE_WRITE);
+    }
+    /*
+     * cbo.clean, cbo.flush and cbo.inval need W, whatever the probe type.
+     * The entry is refilled on the next access, so prot is left alone.
+     */
+    if (env->dom_access == XJITDOMAIN_ACCESS_CBO) {
+        return rights & DRIGHT_W;
     }
     *prot &= dom_prot;
 

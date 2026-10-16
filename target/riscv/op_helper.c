@@ -244,6 +244,26 @@ static void check_zicbom_access(CPURISCVState *env,
     address &= ~(cbomlen - 1);
 
     /*
+     * xjitdomain: the base checks are the same as below, but the domain
+     * must grant W either way. When the base checks pass for a load, a
+     * missing W is a domain access fault rather than a store fault.
+     */
+    if (riscv_cpu_cfg(env)->ext_xjitdomain) {
+        env->dom_access = XJITDOMAIN_ACCESS_UNCHECKED;
+        ret = probe_access_flags(env, address, cbomlen, MMU_DATA_LOAD,
+                                 mmu_idx, true, &phost, ra);
+        env->dom_access = XJITDOMAIN_ACCESS_CBO;
+        if (ret != TLB_INVALID_MASK) {
+            probe_access_flags(env, address, cbomlen, MMU_DATA_LOAD,
+                               mmu_idx, false, &phost, ra);
+        } else {
+            probe_write(env, address, cbomlen, mmu_idx, ra);
+        }
+        env->dom_access = XJITDOMAIN_ACCESS_ORDINARY;
+        return;
+    }
+
+    /*
      * Section 2.5.2 of cmobase v1.0.1:
      *
      * "A cache-block management instruction is permitted to
