@@ -17,18 +17,20 @@
 static bool gen_dom_load(DisasContext *ctx, arg_i *a, MemOp memop)
 {
     REQUIRE_XJITDOMAIN(ctx);
-    gen_dom_access(ctx, XJITDOMAIN_ACCESS_TYPED);
+    gen_dom_access(ctx, XJITDOMAIN_ACCESS_TYPED,
+                   get_address(ctx, a->rs1, a->imm), memop);
     gen_load(ctx, a, memop);
-    gen_dom_access(ctx, XJITDOMAIN_ACCESS_ORDINARY);
+    gen_dom_access_end(ctx);
     return true;
 }
 
 static bool gen_dom_store(DisasContext *ctx, arg_s *a, MemOp memop)
 {
     REQUIRE_XJITDOMAIN(ctx);
-    gen_dom_access(ctx, XJITDOMAIN_ACCESS_TYPED);
+    gen_dom_access(ctx, XJITDOMAIN_ACCESS_TYPED,
+                   get_address(ctx, a->rs1, a->imm), memop);
     gen_store(ctx, a, memop);
-    gen_dom_access(ctx, XJITDOMAIN_ACCESS_ORDINARY);
+    gen_dom_access_end(ctx);
     return true;
 }
 

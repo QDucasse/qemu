@@ -698,6 +698,8 @@ G_NORETURN void riscv_raise_exception(CPURISCVState *env,
                                       uintptr_t pc);
 G_NORETURN void riscv_raise_domain_cfi(CPURISCVState *env, uint64_t subcode,
                                        uintptr_t pc);
+void xjitdomain_begin_access(CPURISCVState *env, vaddr addr, int size,
+                             int mmu_idx, XJitDomainAccess kind);
 
 target_ulong riscv_cpu_get_fflags(CPURISCVState *env);
 void riscv_cpu_set_fflags(CPURISCVState *env, target_ulong);
@@ -1024,6 +1026,7 @@ extern const RISCVCSR xjitdomain_csr_list[];
 void xjitdomain_reset(CPURISCVState *env);
 void xjitdomain_save_on_trap(CPURISCVState *env, uint64_t *xdstatus);
 void xjitdomain_restore_on_xret(CPURISCVState *env, uint64_t *xdstatus);
+void xjitdomain_set_dom(CPURISCVState *env, uint64_t curdom, uint64_t dpend);
 
 const char *priv_spec_to_str(int priv_version);
 #endif /* RISCV_CPU_H */

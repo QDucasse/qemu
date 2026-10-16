@@ -249,7 +249,8 @@ static void check_zicbom_access(CPURISCVState *env,
      * missing W is a domain access fault rather than a store fault.
      */
     if (riscv_cpu_cfg(env)->ext_xjitdomain) {
-        env->dom_access = XJITDOMAIN_ACCESS_UNCHECKED;
+        xjitdomain_begin_access(env, address, cbomlen, mmu_idx,
+                                XJITDOMAIN_ACCESS_UNCHECKED);
         ret = probe_access_flags(env, address, cbomlen, MMU_DATA_LOAD,
                                  mmu_idx, true, &phost, ra);
         env->dom_access = XJITDOMAIN_ACCESS_CBO;
@@ -851,13 +852,14 @@ target_ulong helper_domcall(CPURISCVState *env, target_ulong target,
 
     target_ulong sp = xjitdomain_drs_sp(env, ra) - 16;
 
-    env->dom_access = XJITDOMAIN_ACCESS_DRS;
+    xjitdomain_begin_access(env, sp, 16, mmu_idx, XJITDOMAIN_ACCESS_DRS);
     cpu_stq_le_mmuidx_ra(env, sp, link, mmu_idx, ra);
     cpu_stq_le_mmuidx_ra(env, sp + 8, env->curdom, mmu_idx, ra);
     env->dom_access = XJITDOMAIN_ACCESS_ORDINARY;
 
     env->dsp = sp;
-    env->dpend = DPEND_VALID | (label << ctz32(DPEND_LABEL)) | dom;
+    xjitdomain_set_dom(env, env->curdom,
+                       DPEND_VALID | (label << ctz32(DPEND_LABEL)) | dom);
     return target;
 }
 
@@ -867,7 +869,7 @@ target_ulong helper_domret(CPURISCVState *env)
     int mmu_idx = riscv_env_mmu_index(env, false);
     target_ulong sp = xjitdomain_drs_sp(env, ra);
 
-    env->dom_access = XJITDOMAIN_ACCESS_DRS;
+    xjitdomain_begin_access(env, sp, 16, mmu_idx, XJITDOMAIN_ACCESS_DRS);
     target_ulong pc = cpu_ldq_le_mmuidx_ra(env, sp, mmu_idx, ra);
     uint64_t dom = cpu_ldub_mmuidx_ra(env, sp + 8, mmu_idx, ra);
     env->dom_access = XJITDOMAIN_ACCESS_ORDINARY;
@@ -878,8 +880,14 @@ target_ulong helper_domret(CPURISCVState *env)
     xjitdomain_check_target(env, pc, ra);
 
     env->dsp = sp + 16;
-    env->curdom = dom;
+    xjitdomain_set_dom(env, dom, env->dpend);
     return pc;
+}
+
+void helper_dom_access(CPURISCVState *env, target_ulong addr, uint32_t kind,
+                       uint32_t size, uint32_t mmu_idx)
+{
+    xjitdomain_begin_access(env, addr, size, mmu_idx, kind);
 }
 
 /* A pad with label 0 accepts every label */
@@ -889,8 +897,7 @@ void helper_domlpad(CPURISCVState *env, uint32_t dom, uint32_t label)
         (label != 0 && label != get_field(env->dpend, DPEND_LABEL))) {
         riscv_raise_domain_cfi(env, DCAUSE_LPAD, GETPC());
     }
-    env->curdom = dom;
-    env->dpend = 0;
+    xjitdomain_set_dom(env, dom, 0);
 }
 
 void helper_domain_cfi(CPURISCVState *env, uint32_t subcode)

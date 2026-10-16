@@ -42,9 +42,9 @@ static bool gen_lr(DisasContext *ctx, arg_atomic *a, MemOp mop)
     if (a->rl) {
         tcg_gen_mb(TCG_MO_ALL | TCG_BAR_STRL);
     }
-    gen_dom_access(ctx, XJITDOMAIN_ACCESS_LR);
+    gen_dom_access(ctx, XJITDOMAIN_ACCESS_LR, src1, mop);
     tcg_gen_qemu_ld_tl(load_val, src1, ctx->mem_idx, mop);
-    gen_dom_access(ctx, XJITDOMAIN_ACCESS_ORDINARY);
+    gen_dom_access_end(ctx);
     /*
      * TSO defines AMOs as acquire+release-RCsc, but does not define LR/SC as
      * AMOs.  Instead treat them like loads.
@@ -79,10 +79,10 @@ static bool gen_sc(DisasContext *ctx, arg_atomic *a, MemOp mop)
      */
     dest = dest_gpr(ctx, a->rd);
     src2 = get_gpr(ctx, a->rs2, EXT_NONE);
-    gen_dom_access(ctx, XJITDOMAIN_ACCESS_AMO);
+    gen_dom_access(ctx, XJITDOMAIN_ACCESS_AMO, load_res, mop);
     tcg_gen_atomic_cmpxchg_tl(dest, load_res, load_val, src2,
                               ctx->mem_idx, mop);
-    gen_dom_access(ctx, XJITDOMAIN_ACCESS_ORDINARY);
+    gen_dom_access_end(ctx);
     tcg_gen_setcond_tl(TCG_COND_NE, dest, dest, load_val);
     gen_set_gpr(ctx, a->rd, dest);
     tcg_gen_br(l2);

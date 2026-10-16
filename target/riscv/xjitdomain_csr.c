@@ -85,8 +85,7 @@ void xjitdomain_save_on_trap(CPURISCVState *env, uint64_t *xdstatus)
     }
     *xdstatus = set_field(*xdstatus, DSTATUS_SPD, env->curdom);
     *xdstatus = set_field(*xdstatus, DSTATUS_SPPEND, env->dpend);
-    env->curdom = 0;
-    env->dpend = 0;
+    xjitdomain_set_dom(env, 0, 0);
 }
 
 void xjitdomain_restore_on_xret(CPURISCVState *env, uint64_t *xdstatus)
@@ -94,9 +93,31 @@ void xjitdomain_restore_on_xret(CPURISCVState *env, uint64_t *xdstatus)
     if (!riscv_cpu_cfg(env)->ext_xjitdomain) {
         return;
     }
-    env->curdom = get_field(*xdstatus, DSTATUS_SPD);
-    env->dpend = get_field(*xdstatus, DSTATUS_SPPEND);
+    xjitdomain_set_dom(env, get_field(*xdstatus, DSTATUS_SPD),
+                       get_field(*xdstatus, DSTATUS_SPPEND));
     *xdstatus = set_field(*xdstatus, DSTATUS_SPPEND, 0);
+}
+
+/* Instructions are fetched with the rights of the pending domain, if any */
+static uint64_t xjitdomain_fetch_dom(uint64_t curdom, uint64_t dpend)
+{
+    return (dpend & DPEND_VALID) ? get_field(dpend, DPEND_DOM) : curdom;
+}
+
+/*
+ * The TLB holds entries narrowed to the rights of curdom (R, W) and of the
+ * fetch domain (X), so it is flushed when either changes
+ */
+void xjitdomain_set_dom(CPURISCVState *env, uint64_t curdom, uint64_t dpend)
+{
+    if ((env->dstatus & DSTATUS_EN) &&
+        (curdom != env->curdom ||
+         xjitdomain_fetch_dom(curdom, dpend) !=
+         xjitdomain_fetch_dom(env->curdom, env->dpend))) {
+        tlb_flush(env_cpu(env));
+    }
+    env->curdom = curdom;
+    env->dpend = dpend;
 }
 
 static uint64_t *xjitdomain_csr_ptr(CPURISCVState *env, int csrno)

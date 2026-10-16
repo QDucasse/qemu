@@ -1781,6 +1781,25 @@ static bool xjitdomain_checking(CPURISCVState *env)
     return riscv_cpu_cfg(env)->ext_xjitdomain && (env->dstatus & DSTATUS_EN);
 }
 
+/*
+ * Start an access of the given kind. An entry cached by an ordinary access
+ * would let it skip its own check, so the pages it touches are flushed.
+ */
+void xjitdomain_begin_access(CPURISCVState *env, vaddr addr, int size,
+                             int mmu_idx, XJitDomainAccess kind)
+{
+    env->dom_access = kind;
+    if (xjitdomain_checking(env)) {
+        CPUState *cs = env_cpu(env);
+        vaddr last = addr + size - 1;
+
+        tlb_flush_page_by_mmuidx(cs, addr, 1 << mmu_idx);
+        if ((addr ^ last) & TARGET_PAGE_MASK) {
+            tlb_flush_page_by_mmuidx(cs, last, 1 << mmu_idx);
+        }
+    }
+}
+
 /* drights2:drights1:drights0, {X, W, R} at bit 3 * (8 * e + k) */
 static int xjitdomain_rights(CPURISCVState *env, uint64_t e, uint64_t k)
 {
@@ -2013,12 +2032,16 @@ bool riscv_cpu_tlb_fill(CPUState *cs, vaddr address, int size,
     }
 
     /*
-     * xjitdomain: the domain check follows the base PMP/PTE checks. The
-     * result depends on the current domain, which the TLB does not record,
-     * so the entry is used for this access only.
+     * xjitdomain: the domain check follows the base PMP/PTE checks. An
+     * ordinary access caches the rights of the current domain, and
+     * xjitdomain_set_dom() flushes the TLB when it changes. The other kinds
+     * are checked with other rules, so their entry is used for this access
+     * only.
      */
     if (ret == TRANSLATE_SUCCESS && xjitdomain_checking(env)) {
-        tlb_size = 1;
+        if (env->dom_access != XJITDOMAIN_ACCESS_ORDINARY) {
+            tlb_size = 1;
+        }
         if (!xjitdomain_check(env, pa, size, access_type, mode, dom_key,
                               &prot)) {
             if (probe) {
