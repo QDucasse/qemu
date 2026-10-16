@@ -387,7 +387,7 @@ target_ulong helper_sret(CPURISCVState *env)
         env->elp = get_field(env->mstatus, MSTATUS_SPELP);
     }
     env->mstatus = set_field(env->mstatus, MSTATUS_SPELP, 0);
-    xjitdomain_restore_on_xret(env, env->dstatus);
+    xjitdomain_restore_on_xret(env, &env->dstatus);
 
     if (riscv_cpu_cfg(env)->ext_smctr || riscv_cpu_cfg(env)->ext_ssctr) {
         riscv_ctr_add_entry(env, env->pc, retpc, CTRDATA_TYPE_EXCEP_INT_RET,
@@ -474,7 +474,7 @@ target_ulong helper_mret(CPURISCVState *env)
         env->elp = get_field(env->mstatus, MSTATUS_MPELP);
     }
     env->mstatus = set_field(env->mstatus, MSTATUS_MPELP, 0);
-    xjitdomain_restore_on_xret(env, env->mdstatus);
+    xjitdomain_restore_on_xret(env, &env->mdstatus);
 
     if (riscv_cpu_cfg(env)->ext_smctr || riscv_cpu_cfg(env)->ext_ssctr) {
         riscv_ctr_add_entry(env, env->pc, retpc, CTRDATA_TYPE_EXCEP_INT_RET,
@@ -528,6 +528,7 @@ target_ulong helper_mnret(CPURISCVState *env)
         env->elp = get_field(env->mnstatus, MNSTATUS_MNPELP);
     }
     env->mnstatus = set_field(env->mnstatus, MNSTATUS_MNPELP, 0);
+    xjitdomain_restore_on_xret(env, &env->mndstatus);
 
     return retpc;
 }

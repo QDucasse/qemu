@@ -1180,6 +1180,7 @@ typedef enum CTRType {
 #define CSR_DMPCFG0             0x7C3
 #define CSR_DMPCFG1             0x7C4
 #define CSR_MDSTATUS            0x7C5
+#define CSR_MNDSTATUS           0x7C6
 
 #define DSTATUS_EN              BIT(0)
 #define DSTATUS_SPD             0x0000000E
@@ -1189,6 +1190,9 @@ typedef enum CTRType {
 
 #define MDSTATUS_MPD            0x0000000E
 #define MDSTATUS_MPPEND         0x0001FFF0
+
+#define MNDSTATUS_MNPD          0x0000000E
+#define MNDSTATUS_MNPPEND       0x0001FFF0
 
 /* Packed dpend, as held in env->dpend, xPPEND and curdom[15:3] */
 #define DPEND_DOM               0x0007

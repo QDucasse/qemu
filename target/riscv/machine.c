@@ -410,14 +410,15 @@ static bool jitdomain_needed(void *opaque)
 
 static const VMStateDescription vmstate_jitdomain = {
     .name = "cpu/jitdomain",
-    .version_id = 1,
-    .minimum_version_id = 1,
+    .version_id = 2,
+    .minimum_version_id = 2,
     .needed = jitdomain_needed,
     .fields = (const VMStateField[]) {
         VMSTATE_UINT64(env.curdom, RISCVCPU),
         VMSTATE_UINT64(env.dpend, RISCVCPU),
         VMSTATE_UINT64(env.dstatus, RISCVCPU),
         VMSTATE_UINT64(env.mdstatus, RISCVCPU),
+        VMSTATE_UINT64(env.mndstatus, RISCVCPU),
         VMSTATE_UINT64_ARRAY(env.drights, RISCVCPU, 3),
         VMSTATE_UINT64(env.dtarget, RISCVCPU),
         VMSTATE_UINT64(env.dgate, RISCVCPU),

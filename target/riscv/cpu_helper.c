@@ -2302,6 +2302,7 @@ static void riscv_do_nmi(CPURISCVState *env, target_ulong cause, bool virt)
     if (cpu_get_fcfien(env)) {
         env->mnstatus = set_field(env->mnstatus, MNSTATUS_MNPELP, env->elp);
     }
+    xjitdomain_save_on_trap(env, &env->mndstatus);
 
     /* Trapping to M mode, virt is disabled */
     riscv_cpu_set_mode(env, PRV_M, false);
@@ -2560,10 +2561,6 @@ void riscv_cpu_do_interrupt(CPUState *cs)
                 env->mstatus = set_field(env->mstatus, MSTATUS_MPELP, env->elp);
             }
         }
-        /* An RNMI exception has no mnstatus copy of the domain */
-        if (!nnmi_excep) {
-            xjitdomain_save_on_trap(env, &env->mdstatus);
-        }
 
         if (riscv_has_ext(env, RVH)) {
             if (env->virt_enabled) {
@@ -2607,6 +2604,11 @@ void riscv_cpu_do_interrupt(CPUState *cs)
             s = set_field(s, MSTATUS_MDT, 1);
         }
         env->mstatus = s;
+        /*
+         * After the double-trap check, which turns the trap into an RNMI
+         * saving into mndstatus. An RNMI exception is an ordinary M-mode trap.
+         */
+        xjitdomain_save_on_trap(env, &env->mdstatus);
         env->mcause = cause | ((target_ulong)async << (mxlen - 1));
         if (smode_double_trap) {
             env->mtval2 = env->mcause;

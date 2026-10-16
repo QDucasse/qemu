@@ -24,6 +24,16 @@ static RISCVException xjitdomain(CPURISCVState *env, int csrno)
     return RISCV_EXCP_ILLEGAL_INST;
 }
 
+/* mndstatus, the RNMI copy of the trap fields, exists only with Smrnmi */
+static RISCVException xjitdomain_smrnmi(CPURISCVState *env, int csrno)
+{
+    if (riscv_cpu_cfg(env)->ext_xjitdomain && riscv_cpu_cfg(env)->ext_smrnmi) {
+        return RISCV_EXCP_NONE;
+    }
+
+    return RISCV_EXCP_ILLEGAL_INST;
+}
+
 /* As for pmpcfg, a dmpcfg CSR exists only if its first PMP entry does */
 static RISCVException xjitdomain_dmpcfg(CPURISCVState *env, int csrno)
 {
@@ -54,6 +64,7 @@ void xjitdomain_reset(CPURISCVState *env)
     env->dpend = 0;
     env->dstatus = 0;
     env->mdstatus = 0;
+    env->mndstatus = 0;
     memset(env->drights, 0, sizeof(env->drights));
     env->dtarget = xjitdomain_dtarget_identity();
     env->dgate = 0;
@@ -64,7 +75,8 @@ void xjitdomain_reset(CPURISCVState *env)
 
 /*
  * A trap saves {curdom, dpend} in xPD/xPPEND and enters DOM0; xret restores
- * them. dstatus.SPD/SPPEND and mdstatus.MPD/MPPEND share bit positions.
+ * them and clears xPPEND, so that a second xret cannot restore a stale entry.
+ * dstatus, mdstatus and mndstatus share bit positions.
  */
 void xjitdomain_save_on_trap(CPURISCVState *env, uint64_t *xdstatus)
 {
@@ -77,13 +89,14 @@ void xjitdomain_save_on_trap(CPURISCVState *env, uint64_t *xdstatus)
     env->dpend = 0;
 }
 
-void xjitdomain_restore_on_xret(CPURISCVState *env, uint64_t xdstatus)
+void xjitdomain_restore_on_xret(CPURISCVState *env, uint64_t *xdstatus)
 {
     if (!riscv_cpu_cfg(env)->ext_xjitdomain) {
         return;
     }
-    env->curdom = get_field(xdstatus, DSTATUS_SPD);
-    env->dpend = get_field(xdstatus, DSTATUS_SPPEND);
+    env->curdom = get_field(*xdstatus, DSTATUS_SPD);
+    env->dpend = get_field(*xdstatus, DSTATUS_SPPEND);
+    *xdstatus = set_field(*xdstatus, DSTATUS_SPPEND, 0);
 }
 
 static uint64_t *xjitdomain_csr_ptr(CPURISCVState *env, int csrno)
@@ -105,6 +118,8 @@ static uint64_t *xjitdomain_csr_ptr(CPURISCVState *env, int csrno)
         return &env->dcause;
     case CSR_MDSTATUS:
         return &env->mdstatus;
+    case CSR_MNDSTATUS:
+        return &env->mndstatus;
     default:
         g_assert_not_reached();
     }
@@ -127,6 +142,9 @@ static RISCVException write_xjitdomain(CPURISCVState *env, int csrno,
         break;
     case CSR_MDSTATUS:
         val &= MDSTATUS_MPD | MDSTATUS_MPPEND;
+        break;
+    case CSR_MNDSTATUS:
+        val &= MNDSTATUS_MNPD | MNDSTATUS_MNPPEND;
         break;
     case CSR_DTARGET:
         val &= MAKE_64BIT_MASK(0, 3 * JITDOMAIN_NDOMS);
@@ -192,6 +210,9 @@ const RISCVCSR xjitdomain_csr_list[] = {
     XJITDOMAIN_CSR(CSR_DSP, "dsp"),
     XJITDOMAIN_CSR(CSR_DCAUSE, "dcause"),
     XJITDOMAIN_CSR(CSR_MDSTATUS, "mdstatus"),
+    { .csrno = CSR_MNDSTATUS,
+      .csr_ops = { "mndstatus", xjitdomain_smrnmi, read_xjitdomain,
+                   write_xjitdomain } },
     { .csrno = CSR_CURDOM,
       .csr_ops = { "curdom", xjitdomain, read_curdom } },
     { .csrno = CSR_DMPCFG0,
