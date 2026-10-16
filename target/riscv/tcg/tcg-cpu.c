@@ -192,7 +192,8 @@ static TCGTBCPUState riscv_get_tb_cpu_state(CPUState *cs)
     return (TCGTBCPUState){
         .pc = env->xl == MXL_RV32 ? env->pc & UINT32_MAX : env->pc,
         .flags = flags,
-        .cs_base = env->misa_ext,
+        .cs_base = env->misa_ext |
+                   ((env->dpend & DPEND_VALID) ? TB_CS_BASE_DPEND : 0),
     };
 }
 

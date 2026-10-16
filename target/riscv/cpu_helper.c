@@ -1816,8 +1816,16 @@ static bool xjitdomain_check(CPURISCVState *env, hwaddr pa, int size,
         }
     }
 
-    /* Only implicit DRS accesses may touch DRS pages from U mode */
-    if (key == get_field(env->dstatus, DSTATUS_DRSKEY) && mode == PRV_U) {
+    /*
+     * Implicit DRS accesses must hit DRS pages, and nothing else may touch
+     * them from U mode
+     */
+    bool drs_page = key == get_field(env->dstatus, DSTATUS_DRSKEY);
+
+    if (env->dom_access == XJITDOMAIN_ACCESS_DRS) {
+        return drs_page;
+    }
+    if (drs_page && mode == PRV_U) {
         return false;
     }
 
@@ -1988,6 +1996,10 @@ bool riscv_cpu_tlb_fill(CPUState *cs, vaddr address, int size,
 
     if (ret == TRANSLATE_PMP_FAIL) {
         pmp_violation = true;
+        /* xjitdomain: an access fault on the DRS is a domain CFI fault */
+        if (env->dom_access == XJITDOMAIN_ACCESS_DRS && !probe) {
+            riscv_raise_domain_cfi(env, DCAUSE_DRS, retaddr);
+        }
     }
 
     /*
@@ -2001,6 +2013,9 @@ bool riscv_cpu_tlb_fill(CPUState *cs, vaddr address, int size,
                               &prot)) {
             if (probe) {
                 return false;
+            }
+            if (env->dom_access == XJITDOMAIN_ACCESS_DRS) {
+                riscv_raise_domain_cfi(env, DCAUSE_DRS, retaddr);
             }
             env->badaddr = address;
             env->two_stage_lookup = two_stage_lookup;

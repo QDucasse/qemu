@@ -86,3 +86,68 @@ static bool trans_dsd(DisasContext *ctx, arg_dsd *a)
 {
     return gen_dom_store(ctx, a, MO_UQ);
 }
+
+/*
+ * Domain transitions. domcall and domret jump, and all three may change the
+ * pending entry that decides how the next TB starts, so each ends the TB.
+ */
+static bool trans_domcall(DisasContext *ctx, arg_domcall *a)
+{
+    REQUIRE_XJITDOMAIN(ctx);
+#ifndef CONFIG_USER_ONLY
+    TCGv target = tcg_temp_new();
+    /* Not rd yet: a faulting domcall leaves rd unchanged */
+    TCGv link = tcg_temp_new();
+
+    decode_save_opc(ctx, 0);
+    gen_pc_plus_diff(link, ctx, ctx->cur_insn_len);
+    gen_helper_domcall(target, tcg_env, get_gpr(ctx, a->rs1, EXT_NONE),
+                       tcg_constant_i32(a->dom), tcg_constant_i32(a->label),
+                       link);
+    gen_set_gpr(ctx, a->rd, link);
+    tcg_gen_mov_tl(cpu_pc, target);
+    lookup_and_goto_ptr(ctx);
+    ctx->base.is_jmp = DISAS_NORETURN;
+    return true;
+#else
+    return false;
+#endif
+}
+
+static bool trans_domret(DisasContext *ctx, arg_domret *a)
+{
+    REQUIRE_XJITDOMAIN(ctx);
+#ifndef CONFIG_USER_ONLY
+    decode_save_opc(ctx, 0);
+    gen_helper_domret(cpu_pc, tcg_env);
+    lookup_and_goto_ptr(ctx);
+    ctx->base.is_jmp = DISAS_NORETURN;
+    return true;
+#else
+    return false;
+#endif
+}
+
+/*
+ * Outside a pending entry, domlpad is a no-op. With one pending, a 4-byte
+ * aligned domlpad completes it if the domain and label match; anything
+ * else leaves dpend_expected set, and riscv_tr_translate_insn() raises the
+ * LPAD fault.
+ */
+static bool trans_domlpad(DisasContext *ctx, arg_domlpad *a)
+{
+    REQUIRE_XJITDOMAIN(ctx);
+#ifndef CONFIG_USER_ONLY
+    if (!ctx->dpend_expected || (ctx->base.pc_next & 3)) {
+        return true;
+    }
+    ctx->dpend_expected = false;
+    decode_save_opc(ctx, 0);
+    gen_helper_domlpad(tcg_env, tcg_constant_i32(a->dom),
+                       tcg_constant_i32(a->label));
+    gen_update_pc(ctx, ctx->cur_insn_len);
+    lookup_and_goto_ptr(ctx);
+    ctx->base.is_jmp = DISAS_NORETURN;
+#endif
+    return true;
+}

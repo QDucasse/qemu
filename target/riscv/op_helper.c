@@ -790,4 +790,91 @@ done:
     riscv_raise_exception(env, exception, GETPC());
 }
 
+/*
+ * xjitdomain domain transitions. The DRS grows downward in 16-byte records
+ * {pc (8 B), dom (1 B), pad (7 B)}; its accesses are marked as DRS accesses,
+ * for which riscv_cpu_tlb_fill() turns access faults into domain CFI faults.
+ */
+static target_ulong xjitdomain_drs_sp(CPURISCVState *env, uintptr_t ra)
+{
+    if (env->dsp % 16) {
+        riscv_raise_domain_cfi(env, DCAUSE_DRS, ra);
+    }
+    return env->dsp;
+}
+
+static void xjitdomain_check_target(CPURISCVState *env, target_ulong pc,
+                                    uintptr_t ra)
+{
+    target_ulong align = riscv_cpu_allow_16bit_insn(riscv_cpu_cfg(env),
+                                                    env->priv_ver,
+                                                    env->misa_ext) ? 2 : 4;
+
+    if (pc & (align - 1)) {
+        env->badaddr = pc;
+        riscv_raise_exception(env, RISCV_EXCP_INST_ADDR_MIS, ra);
+    }
+}
+
+target_ulong helper_domcall(CPURISCVState *env, target_ulong target,
+                            uint32_t dom, uint32_t label, target_ulong link)
+{
+    uintptr_t ra = GETPC();
+    int mmu_idx = riscv_env_mmu_index(env, false);
+
+    if (!((env->dgate >> (8 * env->curdom + dom)) & 1)) {
+        riscv_raise_domain_cfi(env, DCAUSE_GATE, ra);
+    }
+    target &= ~(target_ulong)1;
+    xjitdomain_check_target(env, target, ra);
+
+    target_ulong sp = xjitdomain_drs_sp(env, ra) - 16;
+
+    env->dom_access = XJITDOMAIN_ACCESS_DRS;
+    cpu_stq_le_mmuidx_ra(env, sp, link, mmu_idx, ra);
+    cpu_stq_le_mmuidx_ra(env, sp + 8, env->curdom, mmu_idx, ra);
+    env->dom_access = XJITDOMAIN_ACCESS_ORDINARY;
+
+    env->dsp = sp;
+    env->dpend = DPEND_VALID | (label << ctz32(DPEND_LABEL)) | dom;
+    return target;
+}
+
+target_ulong helper_domret(CPURISCVState *env)
+{
+    uintptr_t ra = GETPC();
+    int mmu_idx = riscv_env_mmu_index(env, false);
+    target_ulong sp = xjitdomain_drs_sp(env, ra);
+
+    env->dom_access = XJITDOMAIN_ACCESS_DRS;
+    target_ulong pc = cpu_ldq_le_mmuidx_ra(env, sp, mmu_idx, ra);
+    uint64_t dom = cpu_ldub_mmuidx_ra(env, sp + 8, mmu_idx, ra);
+    env->dom_access = XJITDOMAIN_ACCESS_ORDINARY;
+
+    if (dom >= JITDOMAIN_NDOMS) {
+        riscv_raise_domain_cfi(env, DCAUSE_DRS, ra);
+    }
+    xjitdomain_check_target(env, pc, ra);
+
+    env->dsp = sp + 16;
+    env->curdom = dom;
+    return pc;
+}
+
+/* A pad with label 0 accepts every label */
+void helper_domlpad(CPURISCVState *env, uint32_t dom, uint32_t label)
+{
+    if (dom != get_field(env->dpend, DPEND_DOM) ||
+        (label != 0 && label != get_field(env->dpend, DPEND_LABEL))) {
+        riscv_raise_domain_cfi(env, DCAUSE_LPAD, GETPC());
+    }
+    env->curdom = dom;
+    env->dpend = 0;
+}
+
+void helper_domain_cfi(CPURISCVState *env, uint32_t subcode)
+{
+    riscv_raise_domain_cfi(env, subcode, GETPC());
+}
+
 #endif /* !CONFIG_USER_ONLY */

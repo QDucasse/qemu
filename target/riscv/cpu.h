@@ -132,6 +132,7 @@ typedef enum {
     XJITDOMAIN_ACCESS_LR,       /* needs R and W */
     XJITDOMAIN_ACCESS_AMO,      /* AMO, SC: checked as a store needing R */
     XJITDOMAIN_ACCESS_TYPED,    /* dl*, ds*: checked for dtarget[curdom] */
+    XJITDOMAIN_ACCESS_DRS,      /* implicit DRS access of domcall/domret */
 } XJitDomainAccess;
 
 enum {
@@ -697,6 +698,12 @@ G_NORETURN void riscv_raise_domain_cfi(CPURISCVState *env, uint64_t subcode,
 
 target_ulong riscv_cpu_get_fflags(CPURISCVState *env);
 void riscv_cpu_set_fflags(CPURISCVState *env, target_ulong);
+
+/*
+ * TB cs_base: misa_ext in the low 32 bits and, above it, whether a domain
+ * entry is pending (xjitdomain), as TB_FLAGS has no bit left
+ */
+#define TB_CS_BASE_DPEND    BIT_ULL(32)
 
 FIELD(TB_FLAGS, MEM_IDX, 0, 3)
 FIELD(TB_FLAGS, FS, 3, 2)

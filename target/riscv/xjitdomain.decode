@@ -5,6 +5,8 @@
 #
 # Domain-typed loads and stores: the base LOAD/STORE formats, in custom-0
 # and custom-1. funct3 = 111 is reserved in both.
+# Domain transitions in custom-2: domcall and domlpad hold the domain in
+# imm[11:9] and the label in imm[8:0].
 
 # Fields:
 %rs2       20:5
@@ -12,10 +14,14 @@
 %rd        7:5
 %imm_i     20:s12
 %imm_s     25:s7 7:5
+%dom       29:3
+%label     20:9
 
 # Argument sets
 &i         imm rs1 rd                               !extern
 &s         imm rs1 rs2                              !extern
+&domcall   rd rs1 dom label
+&domlpad   dom label
 
 # Formats
 @i         ............    ..... ... ..... .......  &i imm=%imm_i %rs1 %rd
@@ -32,3 +38,7 @@ dsb        .......  ..... ..... 000 ..... 0101011   @s
 dsh        .......  ..... ..... 001 ..... 0101011   @s
 dsw        .......  ..... ..... 010 ..... 0101011   @s
 dsd        .......  ..... ..... 011 ..... 0101011   @s
+
+domcall    ............    ..... 000 ..... 1011011  &domcall %dom %label %rs1 %rd
+domret     000000000000    00000 001 00000 1011011
+domlpad    ............    00000 010 00000 1011011  &domlpad %dom %label
