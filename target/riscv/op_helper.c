@@ -813,13 +813,15 @@ done:
 }
 
 /*
- * xjitdomain domain transitions. The DRS grows downward in 16-byte records
- * {pc (8 B), dom (1 B), pad (7 B)}; its accesses are marked as DRS accesses,
- * for which riscv_cpu_tlb_fill() turns access faults into domain CFI faults.
+ * xjitdomain domain transitions. The DRS grows downward in 8-byte records
+ * {dom[2:0], pc[60:0]}; its accesses are marked as DRS accesses, for which
+ * riscv_cpu_tlb_fill() turns access faults into domain CFI faults.
  */
+#define DRS_RECORD_PC_BITS 61
+
 static target_ulong xjitdomain_drs_sp(CPURISCVState *env, uintptr_t ra)
 {
-    if (env->dsp % 16) {
+    if (env->dsp % 8) {
         riscv_raise_domain_cfi(env, DCAUSE_DRS, ra);
     }
     return env->dsp;
@@ -850,11 +852,12 @@ target_ulong helper_domcall(CPURISCVState *env, target_ulong target,
     target &= ~(target_ulong)1;
     xjitdomain_check_target(env, target, ra);
 
-    target_ulong sp = xjitdomain_drs_sp(env, ra) - 16;
+    target_ulong sp = xjitdomain_drs_sp(env, ra) - 8;
+    uint64_t record = deposit64(link, DRS_RECORD_PC_BITS,
+                                64 - DRS_RECORD_PC_BITS, env->curdom);
 
-    xjitdomain_begin_access(env, sp, 16, mmu_idx, XJITDOMAIN_ACCESS_DRS);
-    cpu_stq_le_mmuidx_ra(env, sp, link, mmu_idx, ra);
-    cpu_stq_le_mmuidx_ra(env, sp + 8, env->curdom, mmu_idx, ra);
+    xjitdomain_begin_access(env, sp, 8, mmu_idx, XJITDOMAIN_ACCESS_DRS);
+    cpu_stq_le_mmuidx_ra(env, sp, record, mmu_idx, ra);
     env->dom_access = XJITDOMAIN_ACCESS_ORDINARY;
 
     env->dsp = sp;
@@ -869,9 +872,11 @@ target_ulong helper_domret(CPURISCVState *env)
     int mmu_idx = riscv_env_mmu_index(env, false);
     target_ulong sp = xjitdomain_drs_sp(env, ra);
 
-    xjitdomain_begin_access(env, sp, 16, mmu_idx, XJITDOMAIN_ACCESS_DRS);
-    target_ulong pc = cpu_ldq_le_mmuidx_ra(env, sp, mmu_idx, ra);
-    uint64_t dom = cpu_ldub_mmuidx_ra(env, sp + 8, mmu_idx, ra);
+    xjitdomain_begin_access(env, sp, 8, mmu_idx, XJITDOMAIN_ACCESS_DRS);
+    uint64_t record = cpu_ldq_le_mmuidx_ra(env, sp, mmu_idx, ra);
+    target_ulong pc = sextract64(record, 0, DRS_RECORD_PC_BITS);
+    uint64_t dom = extract64(record, DRS_RECORD_PC_BITS,
+                             64 - DRS_RECORD_PC_BITS);
     env->dom_access = XJITDOMAIN_ACCESS_ORDINARY;
 
     if (dom >= JITDOMAIN_NDOMS) {
@@ -879,7 +884,7 @@ target_ulong helper_domret(CPURISCVState *env)
     }
     xjitdomain_check_target(env, pc, ra);
 
-    env->dsp = sp + 16;
+    env->dsp = sp + 8;
     xjitdomain_set_dom(env, dom, env->dpend);
     return pc;
 }
