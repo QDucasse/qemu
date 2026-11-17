@@ -2437,6 +2437,7 @@ static const char *csr_name(int csrno)
     case 0x05c4: return "dtarget";
     case 0x05c5: return "dgate";
     case 0x05c6: return "dsp";
+    case 0x05c7: return "dspbase";
     case 0x0780: return "mtohost";
     case 0x0781: return "mfromhost";
     case 0x0782: return "mreset";
@@ -2455,6 +2456,7 @@ static const char *csr_name(int csrno)
     case 0x07c4: return "dmpcfg1";
     case 0x07c5: return "mdstatus";
     case 0x07c6: return "mndstatus";
+    case 0x08c6: return "udsp";
     case 0x0b00: return "mcycle";
     case 0x0b01: return "mtime";
     case 0x0b02: return "minstret";

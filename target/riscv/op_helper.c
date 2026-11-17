@@ -104,6 +104,17 @@ target_ulong helper_csrrw(CPURISCVState *env, int csr,
                           target_ulong src, target_ulong write_mask)
 {
     target_ulong val = 0;
+
+    /*
+     * xjitdomain: csrrs/csrrc with rs1 != x0 write udsp back even when rs1
+     * holds 0, and that write is range-checked. The generic code drops
+     * writes with an empty mask, so write the old value explicitly.
+     */
+    if (csr == CSR_UDSP && !write_mask) {
+        src = env->dsp;
+        write_mask = -1;
+    }
+
     RISCVException ret = riscv_csrrw(env, csr, &val, src, write_mask, GETPC());
 
     if (ret != RISCV_EXCP_NONE) {

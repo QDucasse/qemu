@@ -283,6 +283,7 @@ struct CPUArchState {
     uint64_t dtarget;
     uint64_t dgate;
     uint64_t dsp;
+    uint64_t dspbase;
     uint64_t dcause;
     uint8_t dmpcfg[MAX_RISCV_PMPS];
     /* Kind of the access in progress, set by translated code */

@@ -1175,6 +1175,8 @@ typedef enum CTRType {
 #define CSR_DTARGET             0x5C4
 #define CSR_DGATE               0x5C5
 #define CSR_DSP                 0x5C6
+#define CSR_DSPBASE             0x5C7
+#define CSR_UDSP                0x8C6
 #define CSR_DCAUSE              0xDC0
 #define CSR_CURDOM              0xCC0
 #define CSR_DMPCFG0             0x7C3
@@ -1219,4 +1221,6 @@ typedef enum CTRType {
 #define DCAUSE_LPAD             1
 #define DCAUSE_DRS              2
 #define DCAUSE_GATE             3
+#define DCAUSE_DSP              4
+#define DCAUSE_DSPRANGE         5
 #endif

@@ -69,6 +69,7 @@ void xjitdomain_reset(CPURISCVState *env)
     env->dtarget = xjitdomain_dtarget_identity();
     env->dgate = 0;
     env->dsp = 0;
+    env->dspbase = 0;
     env->dcause = 0;
     memset(env->dmpcfg, 0, sizeof(env->dmpcfg));
 }
@@ -135,6 +136,8 @@ static uint64_t *xjitdomain_csr_ptr(CPURISCVState *env, int csrno)
         return &env->dgate;
     case CSR_DSP:
         return &env->dsp;
+    case CSR_DSPBASE:
+        return &env->dspbase;
     case CSR_DCAUSE:
         return &env->dcause;
     case CSR_MDSTATUS:
@@ -188,6 +191,53 @@ static RISCVException read_curdom(CPURISCVState *env, int csrno,
     return RISCV_EXCP_NONE;
 }
 
+/*
+ * udsp: the U-mode alias of dsp. Only DOM0 may access it, with EN = 1, and a
+ * write may only move dsp up, to at most dspbase. A debugger access is a
+ * plain access to dsp. The access checks are in the predicate, so that reads
+ * get them too.
+ */
+static RISCVException xjitdomain_udsp(CPURISCVState *env, int csrno)
+{
+    if (!riscv_cpu_cfg(env)->ext_xjitdomain) {
+        return RISCV_EXCP_ILLEGAL_INST;
+    }
+    if (env->debugger) {
+        return RISCV_EXCP_NONE;
+    }
+    if (!(env->dstatus & DSTATUS_EN)) {
+        return RISCV_EXCP_ILLEGAL_INST;
+    }
+    if (env->curdom != 0) {
+        env->dcause = DCAUSE_DSP;
+        return RISCV_EXCP_DOMAIN_CFI_FAULT;
+    }
+    return RISCV_EXCP_NONE;
+}
+
+static RISCVException read_udsp(CPURISCVState *env, int csrno,
+                                target_ulong *val)
+{
+    *val = env->dsp;
+    return RISCV_EXCP_NONE;
+}
+
+/*
+ * val is the value the instruction writes, csrrs/csrrc already merged with
+ * the old dsp. The fault leaves dsp unchanged, and rd too, since the helper
+ * raises it before writing rd.
+ */
+static RISCVException write_udsp(CPURISCVState *env, int csrno,
+                                 target_ulong val, uintptr_t ra)
+{
+    if (!env->debugger && (val < env->dsp || val > env->dspbase)) {
+        env->dcause = DCAUSE_DSPRANGE;
+        return RISCV_EXCP_DOMAIN_CFI_FAULT;
+    }
+    env->dsp = val;
+    return RISCV_EXCP_NONE;
+}
+
 /* dmpcfg0/1: a {L, k} nibble per PMP entry, 16 entries per CSR */
 static RISCVException read_dmpcfg(CPURISCVState *env, int csrno,
                                   target_ulong *val)
@@ -229,6 +279,7 @@ const RISCVCSR xjitdomain_csr_list[] = {
     XJITDOMAIN_CSR(CSR_DTARGET, "dtarget"),
     XJITDOMAIN_CSR(CSR_DGATE, "dgate"),
     XJITDOMAIN_CSR(CSR_DSP, "dsp"),
+    XJITDOMAIN_CSR(CSR_DSPBASE, "dspbase"),
     XJITDOMAIN_CSR(CSR_DCAUSE, "dcause"),
     XJITDOMAIN_CSR(CSR_MDSTATUS, "mdstatus"),
     { .csrno = CSR_MNDSTATUS,
@@ -236,6 +287,8 @@ const RISCVCSR xjitdomain_csr_list[] = {
                    write_xjitdomain } },
     { .csrno = CSR_CURDOM,
       .csr_ops = { "curdom", xjitdomain, read_curdom } },
+    { .csrno = CSR_UDSP,
+      .csr_ops = { "udsp", xjitdomain_udsp, read_udsp, write_udsp } },
     { .csrno = CSR_DMPCFG0,
       .csr_ops = { "dmpcfg0", xjitdomain_dmpcfg, read_dmpcfg, write_dmpcfg } },
     { .csrno = CSR_DMPCFG1,
