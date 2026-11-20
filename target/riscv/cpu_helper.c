@@ -67,6 +67,15 @@ int riscv_env_mmu_index(CPURISCVState *env, bool ifetch)
 #endif
 }
 
+#ifdef CONFIG_USER_ONLY
+/* linux-user has no TLB to flush: only record the kind of access */
+void xjitdomain_begin_access(CPURISCVState *env, vaddr addr, int size,
+                             int mmu_idx, XJitDomainAccess kind)
+{
+    env->dom_access = kind;
+}
+#endif
+
 bool cpu_get_fcfien(CPURISCVState *env)
 {
     /* no cfi extension, return false */

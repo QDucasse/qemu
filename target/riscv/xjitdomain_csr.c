@@ -197,12 +197,21 @@ static RISCVException read_curdom(CPURISCVState *env, int csrno,
  * plain access to dsp. The access checks are in the predicate, so that reads
  * get them too.
  */
+static bool xjitdomain_debugger(CPURISCVState *env)
+{
+#ifdef CONFIG_USER_ONLY
+    return false;
+#else
+    return env->debugger;
+#endif
+}
+
 static RISCVException xjitdomain_udsp(CPURISCVState *env, int csrno)
 {
     if (!riscv_cpu_cfg(env)->ext_xjitdomain) {
         return RISCV_EXCP_ILLEGAL_INST;
     }
-    if (env->debugger) {
+    if (xjitdomain_debugger(env)) {
         return RISCV_EXCP_NONE;
     }
     if (!(env->dstatus & DSTATUS_EN)) {
@@ -230,7 +239,7 @@ static RISCVException read_udsp(CPURISCVState *env, int csrno,
 static RISCVException write_udsp(CPURISCVState *env, int csrno,
                                  target_ulong val, uintptr_t ra)
 {
-    if (!env->debugger && (val < env->dsp || val > env->dspbase)) {
+    if (!xjitdomain_debugger(env) && (val < env->dsp || val > env->dspbase)) {
         env->dcause = DCAUSE_DSPRANGE;
         return RISCV_EXCP_DOMAIN_CFI_FAULT;
     }
