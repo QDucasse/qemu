@@ -1028,6 +1028,7 @@ void xjitdomain_reset(CPURISCVState *env);
 void xjitdomain_save_on_trap(CPURISCVState *env, uint64_t *xdstatus);
 void xjitdomain_restore_on_xret(CPURISCVState *env, uint64_t *xdstatus);
 void xjitdomain_set_dom(CPURISCVState *env, uint64_t curdom, uint64_t dpend);
+uint64_t xjitdomain_dtarget_identity(void);
 
 const char *priv_spec_to_str(int priv_version);
 #endif /* RISCV_CPU_H */

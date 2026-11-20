@@ -6546,6 +6546,11 @@ static abi_long do_prctl(CPUArchState *env, abi_long option, abi_long arg2,
     case PR_SET_SYSCALL_USER_DISPATCH:
         return do_prctl_syscall_user_dispatch(env, arg2, arg3, arg4, arg5);
 
+#ifdef PR_RISCV_JITDOMAIN
+    case PR_RISCV_JITDOMAIN:
+        return do_prctl_riscv_jitdomain(env, arg2, arg3, arg4, arg5);
+#endif
+
     case PR_CAP_AMBIENT:
     case PR_CAPBSET_READ:
     case PR_CAPBSET_DROP:

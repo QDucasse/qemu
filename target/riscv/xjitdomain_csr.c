@@ -50,7 +50,7 @@ static RISCVException xjitdomain_dmpcfg(CPURISCVState *env, int csrno)
 }
 #endif
 
-static uint64_t xjitdomain_dtarget_identity(void)
+uint64_t xjitdomain_dtarget_identity(void)
 {
     uint64_t val = 0;
 

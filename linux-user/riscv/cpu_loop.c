@@ -25,6 +25,7 @@
 #include "signal-common.h"
 #include "elf.h"
 #include "semihosting/common-semi.h"
+#include "jitdomain.h"
 
 void cpu_loop(CPURISCVState *env)
 {
@@ -33,6 +34,7 @@ void cpu_loop(CPURISCVState *env)
     target_ulong ret;
 
     for (;;) {
+        jitdomain_sync(env);
         cpu_exec_start(cs);
         trapnr = cpu_exec(cs);
         cpu_exec_end(cs);
