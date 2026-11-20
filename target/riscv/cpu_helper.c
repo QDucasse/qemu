@@ -1822,31 +1822,15 @@ static int xjitdomain_rights(CPURISCVState *env, uint64_t e, uint64_t k)
 }
 
 /*
- * The xjitdomain access check, after translation and the base PMP/PTE
- * checks. pte_key is the key of the leaf PTE, or -1 to take it from the
- * PMP entry that pa matched. prot is narrowed to the rights the domain
- * grants, so that an AMO is also checked for read.
+ * The rules of the xjitdomain access check for an access of the kind
+ * env->dom_access to a page with the given key. pmp_locked tells whether
+ * the PMP entry it matched is locked, which M mode accesses depend on.
+ * prot is narrowed to the rights the domain grants.
  */
-static bool xjitdomain_check(CPURISCVState *env, hwaddr pa, int size,
-                             MMUAccessType access_type, int mode,
-                             int pte_key, int *prot)
+static bool xjitdomain_check_key(CPURISCVState *env, uint64_t key,
+                                 MMUAccessType access_type, int mode,
+                                 bool pmp_locked, int *prot)
 {
-    uint64_t key = 0;
-    bool pmp_locked = false;
-
-    if (env->dom_access == XJITDOMAIN_ACCESS_UNCHECKED) {
-        return true;
-    }
-    if (pte_key >= 0) {
-        key = pte_key;
-    } else if (riscv_cpu_cfg(env)->pmp) {
-        int i = pmp_find_entry(env, pa, size, &pmp_locked);
-
-        if (i >= 0) {
-            key = env->dmpcfg[i] & DMPCFG_K;
-        }
-    }
-
     /*
      * Implicit DRS accesses must hit DRS pages, and nothing else may touch
      * them from U mode
@@ -1908,6 +1892,35 @@ static bool xjitdomain_check(CPURISCVState *env, hwaddr pa, int size,
     default:
         return dom_prot & PAGE_WRITE;
     }
+}
+
+/*
+ * The xjitdomain access check, after translation and the base PMP/PTE
+ * checks. pte_key is the key of the leaf PTE, or -1 to take it from the
+ * PMP entry that pa matched. prot is narrowed to the rights the domain
+ * grants, so that an AMO is also checked for read.
+ */
+static bool xjitdomain_check(CPURISCVState *env, hwaddr pa, int size,
+                             MMUAccessType access_type, int mode,
+                             int pte_key, int *prot)
+{
+    uint64_t key = 0;
+    bool pmp_locked = false;
+
+    if (env->dom_access == XJITDOMAIN_ACCESS_UNCHECKED) {
+        return true;
+    }
+    if (pte_key >= 0) {
+        key = pte_key;
+    } else if (riscv_cpu_cfg(env)->pmp) {
+        int i = pmp_find_entry(env, pa, size, &pmp_locked);
+
+        if (i >= 0) {
+            key = env->dmpcfg[i] & DMPCFG_K;
+        }
+    }
+    return xjitdomain_check_key(env, key, access_type, mode, pmp_locked,
+                                prot);
 }
 
 bool riscv_cpu_tlb_fill(CPUState *cs, vaddr address, int size,
