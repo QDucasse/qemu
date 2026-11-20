@@ -75,6 +75,12 @@ void cpu_loop(CPURISCVState *env)
         case RISCV_EXCP_ILLEGAL_INST:
             force_sig_fault(TARGET_SIGILL, TARGET_ILL_ILLOPC, env->pc);
             break;
+        case RISCV_EXCP_DOMAIN_ACCESS_FAULT:
+            force_sig_fault(TARGET_SIGSEGV, TARGET_SEGV_PKUERR, env->badaddr);
+            break;
+        case RISCV_EXCP_DOMAIN_CFI_FAULT:
+            force_sig_fault(TARGET_SIGSEGV, TARGET_SEGV_CPERR, env->pc);
+            break;
         case RISCV_EXCP_BREAKPOINT:
         case EXCP_DEBUG:
         gdbstep:

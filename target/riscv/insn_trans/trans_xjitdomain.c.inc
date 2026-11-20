@@ -96,7 +96,6 @@ static bool trans_dsd(DisasContext *ctx, arg_dsd *a)
 static bool trans_domcall(DisasContext *ctx, arg_domcall *a)
 {
     REQUIRE_XJITDOMAIN(ctx);
-#ifndef CONFIG_USER_ONLY
     TCGv target = tcg_temp_new();
     /* Not rd yet: a faulting domcall leaves rd unchanged */
     TCGv link = tcg_temp_new();
@@ -111,23 +110,16 @@ static bool trans_domcall(DisasContext *ctx, arg_domcall *a)
     lookup_and_goto_ptr(ctx);
     ctx->base.is_jmp = DISAS_NORETURN;
     return true;
-#else
-    return false;
-#endif
 }
 
 static bool trans_domret(DisasContext *ctx, arg_domret *a)
 {
     REQUIRE_XJITDOMAIN(ctx);
-#ifndef CONFIG_USER_ONLY
     decode_save_opc(ctx, 0);
     gen_helper_domret(cpu_pc, tcg_env);
     lookup_and_goto_ptr(ctx);
     ctx->base.is_jmp = DISAS_NORETURN;
     return true;
-#else
-    return false;
-#endif
 }
 
 /*
@@ -139,7 +131,6 @@ static bool trans_domret(DisasContext *ctx, arg_domret *a)
 static bool trans_domlpad(DisasContext *ctx, arg_domlpad *a)
 {
     REQUIRE_XJITDOMAIN(ctx);
-#ifndef CONFIG_USER_ONLY
     if (!ctx->dpend_expected || (ctx->base.pc_next & 3)) {
         return true;
     }
@@ -150,6 +141,5 @@ static bool trans_domlpad(DisasContext *ctx, arg_domlpad *a)
     gen_update_pc(ctx, ctx->cur_insn_len);
     lookup_and_goto_ptr(ctx);
     ctx->base.is_jmp = DISAS_NORETURN;
-#endif
     return true;
 }

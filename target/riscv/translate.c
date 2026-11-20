@@ -1152,14 +1152,12 @@ static void gen_dom_access(DisasContext *ctx, XJitDomainAccess kind,
     if (!ctx->cfg_ptr->ext_xjitdomain) {
         return;
     }
-#ifndef CONFIG_USER_ONLY
     if (kind != XJITDOMAIN_ACCESS_ORDINARY) {
         gen_helper_dom_access(tcg_env, addr, tcg_constant_i32(kind),
                               tcg_constant_i32(memop_size(mop)),
                               tcg_constant_i32(ctx->mem_idx));
         return;
     }
-#endif
     tcg_gen_st_i32(tcg_constant_i32(kind), tcg_env,
                    offsetof(CPURISCVState, dom_access));
 }
@@ -1419,7 +1417,6 @@ static void riscv_tr_translate_insn(DisasContextBase *dcbase, CPUState *cpu)
         ctx->base.is_jmp = DISAS_NORETURN;
     }
 
-#ifndef CONFIG_USER_ONLY
     /*
      * Likewise, with a domain entry pending, an insn that is not a matching
      * pad raises a domain CFI fault before it does anything
@@ -1430,7 +1427,6 @@ static void riscv_tr_translate_insn(DisasContextBase *dcbase, CPUState *cpu)
         tcg_ctx->emit_before_op = NULL;
         ctx->base.is_jmp = DISAS_NORETURN;
     }
-#endif
 
     /* Only the first insn within a TB is allowed to cross a page boundary. */
     if (ctx->base.is_jmp == DISAS_NEXT) {

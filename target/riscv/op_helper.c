@@ -823,6 +823,8 @@ done:
     riscv_raise_exception(env, exception, GETPC());
 }
 
+#endif /* !CONFIG_USER_ONLY */
+
 /*
  * xjitdomain domain transitions. The DRS grows downward in 8-byte records
  * {dom[2:0], pc[60:0]}; its accesses are marked as DRS accesses, for which
@@ -920,5 +922,3 @@ void helper_domain_cfi(CPURISCVState *env, uint32_t subcode)
 {
     riscv_raise_domain_cfi(env, subcode, GETPC());
 }
-
-#endif /* !CONFIG_USER_ONLY */
