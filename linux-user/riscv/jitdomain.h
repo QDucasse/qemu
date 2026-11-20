@@ -22,5 +22,7 @@ abi_long do_riscv_pkey_mprotect(abi_ulong start, abi_ulong len,
                                 abi_ulong prot, abi_long key);
 /* Load the process's EN and matrices into env if they changed */
 void jitdomain_sync(CPUArchState *env);
+/* At thread exit: unmap the thread's DRS */
+void jitdomain_drs_free(TaskState *ts);
 
 #endif /* RISCV_JITDOMAIN_H */

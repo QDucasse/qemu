@@ -11,6 +11,7 @@
 
 #include "qemu/osdep.h"
 #include "qemu/atomic.h"
+#include "qemu/units.h"
 #include "qemu/rcu.h"
 #include "qemu/thread.h"
 #include "qemu.h"
@@ -24,6 +25,8 @@
 /* Key of the DRS pages, never handed out by pkey_alloc */
 #define JITDOMAIN_DRSKEY        7
 #define JITDOMAIN_FIRST_KEY     1
+/* DRS_ALLOC with size 0: 8192 records */
+#define JITDOMAIN_DRS_DEFAULT   (64 * KiB)
 
 typedef struct JitDomainMatrices {
     uint64_t drights[3];
@@ -107,6 +110,16 @@ static void jitdomain_bump_gen(void)
 static int jitdomain_key_flags(unsigned key)
 {
     return key << ctz32(PAGE_DOMKEY);
+}
+
+static bool jitdomain_is_enabled(void)
+{
+    bool enabled;
+
+    qemu_mutex_lock(&jitdomain_lock);
+    enabled = jitdomain_enabled;
+    qemu_mutex_unlock(&jitdomain_lock);
+    return enabled;
 }
 
 /*
@@ -193,6 +206,100 @@ static abi_long jitdomain_get_matrices(CPUArchState *env, abi_ulong addr)
     return 0;
 }
 
+/*
+ * A DRS for the calling thread: size bytes rounded up to pages, with the
+ * DRS key, between two PROT_NONE guard pages, so that an overflow or an
+ * underflow is a plain SIGSEGV/SEGV_ACCERR. Being mapped, the guard pages
+ * are never handed out by a later mmap. dsp and dspbase start at the top.
+ */
+static abi_long jitdomain_drs_alloc(CPUArchState *env, abi_ulong size)
+{
+    TaskState *ts = get_task_state(env_cpu(env));
+    abi_ulong guard = TARGET_PAGE_SIZE;
+    abi_long base, ret;
+
+    if (!jitdomain_is_enabled()) {
+        return -TARGET_EINVAL;
+    }
+    if (ts->drs_size) {
+        return -TARGET_EBUSY;
+    }
+    if (!size) {
+        size = JITDOMAIN_DRS_DEFAULT;
+    }
+    if (size > (abi_ulong)-1 - 3 * guard) {
+        return -TARGET_ENOMEM;
+    }
+    size = TARGET_PAGE_ALIGN(size);
+
+    mmap_lock();
+    base = target_mmap(0, size + 2 * guard, PROT_READ | PROT_WRITE,
+                       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (base == -1) {
+        ret = get_errno(base);
+        mmap_unlock();
+        return ret;
+    }
+    target_mprotect(base, guard, PROT_NONE);
+    target_mprotect(base + guard + size, guard, PROT_NONE);
+    base += guard;
+    page_set_flags(base, base + size - 1,
+                   jitdomain_key_flags(JITDOMAIN_DRSKEY), PAGE_DOMKEY);
+    mmap_unlock();
+
+    ts->drs_base = base;
+    ts->drs_size = size;
+    env->dsp = base + size;
+    env->dspbase = base + size;
+    return 0;
+}
+
+/* A guard page the thread has left as it was */
+static void jitdomain_drs_free_guard(abi_ulong p)
+{
+    int flags = page_get_flags(p);
+
+    if ((flags & PAGE_VALID) && !(flags & (PAGE_RWX | PAGE_DOMKEY))) {
+        target_munmap(p, TARGET_PAGE_SIZE);
+    }
+}
+
+/*
+ * The pages of the DRS that still carry the DRS key, and the guard pages
+ * still PROT_NONE: the thread may have unmapped the rest, and something
+ * else may be mapped there now.
+ */
+void jitdomain_drs_free(TaskState *ts)
+{
+    abi_ulong end = ts->drs_base + ts->drs_size;
+    abi_ulong run = 0;
+    bool in_run = false;
+
+    if (!ts->drs_size) {
+        return;
+    }
+    mmap_lock();
+    jitdomain_drs_free_guard(ts->drs_base - TARGET_PAGE_SIZE);
+    jitdomain_drs_free_guard(end);
+    for (abi_ulong p = ts->drs_base; p < end; p += TARGET_PAGE_SIZE) {
+        bool drs = (page_get_flags(p) & (PAGE_VALID | PAGE_DOMKEY)) ==
+                   (PAGE_VALID | jitdomain_key_flags(JITDOMAIN_DRSKEY));
+
+        if (drs && !in_run) {
+            run = p;
+            in_run = true;
+        } else if (!drs && in_run) {
+            target_munmap(run, p - run);
+            in_run = false;
+        }
+    }
+    if (in_run) {
+        target_munmap(run, end - run);
+    }
+    mmap_unlock();
+    ts->drs_size = 0;
+}
+
 abi_long do_prctl_riscv_jitdomain(CPUArchState *env, abi_ulong op,
                                   abi_ulong arg3, abi_ulong arg4,
                                   abi_ulong arg5)
@@ -213,19 +320,14 @@ abi_long do_prctl_riscv_jitdomain(CPUArchState *env, abi_ulong op,
             return -TARGET_EINVAL;
         }
         return jitdomain_get_matrices(env, arg3);
+    case PR_JITDOMAIN_DRS_ALLOC:
+        if (arg4 || arg5) {
+            return -TARGET_EINVAL;
+        }
+        return jitdomain_drs_alloc(env, arg3);
     default:
         return -TARGET_EINVAL;
     }
-}
-
-static bool jitdomain_is_enabled(void)
-{
-    bool enabled;
-
-    qemu_mutex_lock(&jitdomain_lock);
-    enabled = jitdomain_enabled;
-    qemu_mutex_unlock(&jitdomain_lock);
-    return enabled;
 }
 
 /* The lowest free key in 1-6 */

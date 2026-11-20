@@ -127,6 +127,11 @@ struct TaskState {
     abi_ulong gcs_size;
     abi_ulong gcs_el0_locked;
 #endif
+#if defined(TARGET_RISCV)
+    /* The xjitdomain DRS of the thread, without its guard pages */
+    abi_ulong drs_base;
+    abi_ulong drs_size;
+#endif
     int used; /* non zero if used */
     struct image_info *info;
     struct linux_binprm *bprm;

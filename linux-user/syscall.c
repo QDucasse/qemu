@@ -9496,6 +9496,9 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
                 target_munmap(ts->gcs_base, ts->gcs_size);
             }
 #endif
+#ifdef PR_RISCV_JITDOMAIN
+            jitdomain_drs_free(ts);
+#endif
 
             object_unparent(OBJECT(cpu));
             object_unref(OBJECT(cpu));

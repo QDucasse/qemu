@@ -9,6 +9,17 @@ static inline void cpu_clone_regs_child(CPURISCVState *env, target_ulong newsp,
     }
 
     env->gpr[xA0] = 0;
+
+    /*
+     * xjitdomain: a new thread starts in DOM0 without a DRS, while a fork
+     * child keeps the forking thread's domain state
+     */
+    if (flags & CLONE_VM) {
+        env->curdom = 0;
+        env->dpend = 0;
+        env->dsp = 0;
+        env->dspbase = 0;
+    }
 }
 
 static inline void cpu_clone_regs_parent(CPURISCVState *env, unsigned flags)
