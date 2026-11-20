@@ -10904,6 +10904,16 @@ static abi_long do_syscall1(CPUArchState *cpu_env, int num, abi_long arg1,
             }
         }
         return get_errno(target_mprotect(arg1, arg2, arg3));
+#ifdef PR_RISCV_JITDOMAIN
+    /* Protection keys tag pages for the xjitdomain matrices */
+    case TARGET_NR_pkey_mprotect:
+        arg1 = cpu_untagged_addr(cpu, arg1);
+        return do_riscv_pkey_mprotect(arg1, arg2, arg3, arg4);
+    case TARGET_NR_pkey_alloc:
+        return do_riscv_pkey_alloc(arg1, arg2);
+    case TARGET_NR_pkey_free:
+        return do_riscv_pkey_free(arg1);
+#endif
 #ifdef TARGET_NR_mremap
     case TARGET_NR_mremap:
         arg1 = cpu_untagged_addr(cpu, arg1);

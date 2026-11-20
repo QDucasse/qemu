@@ -38,5 +38,6 @@
 /* Target-specific bits that will be used via page_get_flags().  */
 #define PAGE_TARGET_1  0x0200
 #define PAGE_TARGET_2  0x0400
+#define PAGE_TARGET_3  0x0800
 
 #endif

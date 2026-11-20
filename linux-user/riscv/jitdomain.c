@@ -1,7 +1,7 @@
 /*
  * JITDomain (xjitdomain) user ABI for linux-user.
  *
- * EN and the matrices belong to the process. Each
+ * EN, the matrices and the allocated keys belong to the process. Each
  * thread runs with a copy of the matrices in its env, refreshed from the
  * process copy when it returns to the guest after a change, as a kernel
  * would load them on its next return to U mode.
@@ -15,10 +15,15 @@
 #include "qemu/thread.h"
 #include "qemu.h"
 #include "user-internals.h"
+#include "user-mmap.h"
+#include "user/page-protection.h"
+#include "exec/page-protection.h"
+#include "exec/mmap-lock.h"
 #include "jitdomain.h"
 
-/* Key of the DRS pages */
+/* Key of the DRS pages, never handed out by pkey_alloc */
 #define JITDOMAIN_DRSKEY        7
+#define JITDOMAIN_FIRST_KEY     1
 
 typedef struct JitDomainMatrices {
     uint64_t drights[3];
@@ -33,6 +38,8 @@ static JitDomainMatrices jitdomain_matrices;
 static uint64_t jitdomain_gen;
 /* The generation this thread's env holds */
 static __thread uint64_t jitdomain_seen_gen;
+/* Keys handed out by pkey_alloc, one bit per key; guarded by mmap_lock */
+static unsigned jitdomain_keys;
 
 static void __attribute__((constructor)) jitdomain_init(void)
 {
@@ -94,6 +101,12 @@ static void jitdomain_publish(CPUArchState *env)
 static void jitdomain_bump_gen(void)
 {
     qatomic_set(&jitdomain_gen, jitdomain_gen + 1);
+}
+
+/* Page flags for a key */
+static int jitdomain_key_flags(unsigned key)
+{
+    return key << ctz32(PAGE_DOMKEY);
 }
 
 /*
@@ -203,4 +216,99 @@ abi_long do_prctl_riscv_jitdomain(CPUArchState *env, abi_ulong op,
     default:
         return -TARGET_EINVAL;
     }
+}
+
+static bool jitdomain_is_enabled(void)
+{
+    bool enabled;
+
+    qemu_mutex_lock(&jitdomain_lock);
+    enabled = jitdomain_enabled;
+    qemu_mutex_unlock(&jitdomain_lock);
+    return enabled;
+}
+
+/* The lowest free key in 1-6 */
+abi_long do_riscv_pkey_alloc(abi_ulong flags, abi_ulong init_rights)
+{
+    abi_long ret = -TARGET_ENOSPC;
+
+    if (!jitdomain_is_enabled() || flags || init_rights) {
+        return -TARGET_EINVAL;
+    }
+    mmap_lock();
+    for (int k = JITDOMAIN_FIRST_KEY; k < JITDOMAIN_DRSKEY; k++) {
+        if (!(jitdomain_keys & (1u << k))) {
+            jitdomain_keys |= 1u << k;
+            ret = k;
+            break;
+        }
+    }
+    mmap_unlock();
+    return ret;
+}
+
+/* Pages that still carry the key keep it, as with Linux pkeys */
+abi_long do_riscv_pkey_free(abi_long key)
+{
+    abi_long ret = -TARGET_EINVAL;
+
+    if (!jitdomain_is_enabled()) {
+        return -TARGET_EINVAL;
+    }
+    mmap_lock();
+    if (key >= JITDOMAIN_FIRST_KEY && key < JITDOMAIN_DRSKEY &&
+        (jitdomain_keys & (1u << key))) {
+        jitdomain_keys &= ~(1u << key);
+        ret = 0;
+    }
+    mmap_unlock();
+    return ret;
+}
+
+typedef struct JitDomainRange {
+    abi_ulong start, last;
+} JitDomainRange;
+
+static int jitdomain_find_drs(void *priv, vaddr start, vaddr end, int flags)
+{
+    JitDomainRange *r = priv;
+
+    return start <= r->last && end - 1 >= r->start &&
+           (flags & PAGE_DOMKEY) == jitdomain_key_flags(JITDOMAIN_DRSKEY);
+}
+
+/*
+ * mprotect, then tag the pages with key. Key -1 leaves the keys alone, as
+ * in Linux; key 0 is always allocated. DRS pages cannot be retagged.
+ */
+abi_long do_riscv_pkey_mprotect(abi_ulong start, abi_ulong len,
+                                abi_ulong prot, abi_long key)
+{
+    JitDomainRange r = { start, start + TARGET_PAGE_ALIGN(len) - 1 };
+    abi_long ret;
+
+    if (!jitdomain_is_enabled()) {
+        return -TARGET_EINVAL;
+    }
+    mmap_lock();
+    if (key != -1 &&
+        (key < 0 || key >= JITDOMAIN_DRSKEY ||
+         (key > 0 && !(jitdomain_keys & (1u << key))))) {
+        ret = -TARGET_EINVAL;
+        goto out;
+    }
+    if (len && r.last >= r.start &&
+        walk_memory_regions(&r, jitdomain_find_drs)) {
+        ret = -TARGET_EINVAL;
+        goto out;
+    }
+    ret = target_mprotect(start, len, prot);
+    if (ret == 0 && len && key != -1) {
+        page_set_flags(r.start, r.last, jitdomain_key_flags(key),
+                       PAGE_DOMKEY);
+    }
+out:
+    mmap_unlock();
+    return ret;
 }

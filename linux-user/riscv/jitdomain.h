@@ -1,6 +1,6 @@
 /*
  * JITDomain (xjitdomain) user ABI for linux-user: the PR_RISCV_JITDOMAIN
- * prctl.
+ * prctl and the protection-key syscalls that tag pages.
  *
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
@@ -16,6 +16,10 @@
 abi_long do_prctl_riscv_jitdomain(CPUArchState *env, abi_ulong op,
                                   abi_ulong arg3, abi_ulong arg4,
                                   abi_ulong arg5);
+abi_long do_riscv_pkey_alloc(abi_ulong flags, abi_ulong init_rights);
+abi_long do_riscv_pkey_free(abi_long key);
+abi_long do_riscv_pkey_mprotect(abi_ulong start, abi_ulong len,
+                                abi_ulong prot, abi_long key);
 /* Load the process's EN and matrices into env if they changed */
 void jitdomain_sync(CPUArchState *env);
 

@@ -1030,5 +1030,12 @@ void xjitdomain_restore_on_xret(CPURISCVState *env, uint64_t *xdstatus);
 void xjitdomain_set_dom(CPURISCVState *env, uint64_t curdom, uint64_t dpend);
 uint64_t xjitdomain_dtarget_identity(void);
 
+/*
+ * linux-user keeps the xjitdomain key of a page in its page flags, as the
+ * kernel keeps it in the VMA: mprotect leaves it alone, a new mapping gets
+ * key 0.
+ */
+#define PAGE_DOMKEY         (PAGE_TARGET_1 | PAGE_TARGET_2 | PAGE_TARGET_3)
+
 const char *priv_spec_to_str(int priv_version);
 #endif /* RISCV_CPU_H */
