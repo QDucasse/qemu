@@ -189,11 +189,21 @@ static TCGTBCPUState riscv_get_tb_cpu_state(CPUState *cs)
     flags = FIELD_DP32(flags, TB_FLAGS, PM_PMM, riscv_pm_get_pmm(env));
     flags = FIELD_DP32(flags, TB_FLAGS, PM_SIGNEXTEND, pm_signext);
 
+    uint64_t cs_base = env->misa_ext;
+
+    if (env->dpend & DPEND_VALID) {
+        cs_base |= TB_CS_BASE_DPEND;
+    }
+#ifdef CONFIG_USER_ONLY
+    if (env->dstatus & DSTATUS_EN) {
+        cs_base |= TB_CS_BASE_DOMCHK;
+    }
+#endif
+
     return (TCGTBCPUState){
         .pc = env->xl == MXL_RV32 ? env->pc & UINT32_MAX : env->pc,
         .flags = flags,
-        .cs_base = env->misa_ext |
-                   ((env->dpend & DPEND_VALID) ? TB_CS_BASE_DPEND : 0),
+        .cs_base = cs_base,
     };
 }
 

@@ -133,6 +133,10 @@ DEF_HELPER_1(domret, tl, env)
 DEF_HELPER_3(domlpad, void, env, i32, i32)
 DEF_HELPER_5(dom_access, void, env, tl, i32, i32, i32)
 DEF_HELPER_2(domain_cfi, noreturn, env, i32)
+#ifdef CONFIG_USER_ONLY
+DEF_HELPER_3(dom_check, void, env, tl, i32)
+DEF_HELPER_3(dom_fetch, void, env, tl, i32)
+#endif
 #ifndef CONFIG_USER_ONLY
 DEF_HELPER_1(sret, tl, env)
 DEF_HELPER_1(mret, tl, env)

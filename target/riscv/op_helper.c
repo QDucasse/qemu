@@ -212,6 +212,7 @@ void helper_cbo_zero(CPURISCVState *env, target_ulong address)
      * to raise any exceptions, including PMP.
      */
     mem = probe_write(env, address, cbozlen, mmu_idx, ra);
+    xjitdomain_user_check(env, address, cbozlen, MMU_DATA_STORE, ra);
 
     if (likely(mem)) {
         memset(mem, 0, cbozlen);
@@ -271,6 +272,7 @@ static void check_zicbom_access(CPURISCVState *env,
         } else {
             probe_write(env, address, cbomlen, mmu_idx, ra);
         }
+        xjitdomain_user_check(env, address, cbomlen, MMU_DATA_LOAD, ra);
         env->dom_access = XJITDOMAIN_ACCESS_ORDINARY;
         return;
     }
@@ -870,6 +872,7 @@ target_ulong helper_domcall(CPURISCVState *env, target_ulong target,
                                 64 - DRS_RECORD_PC_BITS, env->curdom);
 
     xjitdomain_begin_access(env, sp, 8, mmu_idx, XJITDOMAIN_ACCESS_DRS);
+    xjitdomain_user_check(env, sp, 8, MMU_DATA_STORE, ra);
     cpu_stq_le_mmuidx_ra(env, sp, record, mmu_idx, ra);
     env->dom_access = XJITDOMAIN_ACCESS_ORDINARY;
 
@@ -886,6 +889,7 @@ target_ulong helper_domret(CPURISCVState *env)
     target_ulong sp = xjitdomain_drs_sp(env, ra);
 
     xjitdomain_begin_access(env, sp, 8, mmu_idx, XJITDOMAIN_ACCESS_DRS);
+    xjitdomain_user_check(env, sp, 8, MMU_DATA_LOAD, ra);
     uint64_t record = cpu_ldq_le_mmuidx_ra(env, sp, mmu_idx, ra);
     target_ulong pc = sextract64(record, 0, DRS_RECORD_PC_BITS);
     uint64_t dom = extract64(record, DRS_RECORD_PC_BITS,
@@ -907,6 +911,31 @@ void helper_dom_access(CPURISCVState *env, target_ulong addr, uint32_t kind,
 {
     xjitdomain_begin_access(env, addr, size, mmu_idx, kind);
 }
+
+#ifdef CONFIG_USER_ONLY
+/*
+ * linux-user, while EN is set: the domain check of a guest load or store
+ * (desc from gen_dom_check), before the access itself
+ */
+void helper_dom_check(CPURISCVState *env, target_ulong addr, uint32_t desc)
+{
+    unsigned size = extract32(desc, 0, 8);
+    MMUAccessType access_type = extract32(desc, 8, 2);
+    unsigned align_bits = extract32(desc, 16, 8);
+
+    /* The access raises its misaligned fault first */
+    if (!QEMU_IS_ALIGNED(addr, 1 << align_bits)) {
+        return;
+    }
+    xjitdomain_user_check(env, addr, size, access_type, GETPC());
+}
+
+/* The same for the fetch of the instruction a TB starts with */
+void helper_dom_fetch(CPURISCVState *env, target_ulong pc, uint32_t len)
+{
+    xjitdomain_user_check(env, pc, len, MMU_INST_FETCH, GETPC());
+}
+#endif
 
 /* A pad with label 0 accepts every label */
 void helper_domlpad(CPURISCVState *env, uint32_t dom, uint32_t label)

@@ -701,15 +701,31 @@ G_NORETURN void riscv_raise_domain_cfi(CPURISCVState *env, uint64_t subcode,
                                        uintptr_t pc);
 void xjitdomain_begin_access(CPURISCVState *env, vaddr addr, int size,
                              int mmu_idx, XJitDomainAccess kind);
+#ifdef CONFIG_USER_ONLY
+/*
+ * The domain check of an access of the kind env->dom_access, which the TLB
+ * fill does in system mode
+ */
+void xjitdomain_user_check(CPURISCVState *env, vaddr addr, int size,
+                           MMUAccessType access_type, uintptr_t ra);
+#else
+static inline void xjitdomain_user_check(CPURISCVState *env, vaddr addr,
+                                         int size, MMUAccessType access_type,
+                                         uintptr_t ra)
+{
+}
+#endif
 
 target_ulong riscv_cpu_get_fflags(CPURISCVState *env);
 void riscv_cpu_set_fflags(CPURISCVState *env, target_ulong);
 
 /*
  * TB cs_base: misa_ext in the low 32 bits and, above it, whether a domain
- * entry is pending (xjitdomain), as TB_FLAGS has no bit left
+ * entry is pending (xjitdomain), as TB_FLAGS has no bit left, and in
+ * linux-user whether the code checks its accesses (EN)
  */
 #define TB_CS_BASE_DPEND    BIT_ULL(32)
+#define TB_CS_BASE_DOMCHK   BIT_ULL(33)
 
 FIELD(TB_FLAGS, MEM_IDX, 0, 3)
 FIELD(TB_FLAGS, FS, 3, 2)

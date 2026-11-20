@@ -38,6 +38,8 @@ void cpu_loop(CPURISCVState *env)
         cpu_exec_start(cs);
         trapnr = cpu_exec(cs);
         cpu_exec_end(cs);
+        /* A trap ends the access in progress, as on a trap entry */
+        env->dom_access = XJITDOMAIN_ACCESS_ORDINARY;
         qemu_process_cpu_events(cs);
 
         switch (trapnr) {

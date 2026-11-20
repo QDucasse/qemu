@@ -37,6 +37,103 @@
 
 #include "tcg/tcg-cpu.h"
 
+#ifdef CONFIG_USER_ONLY
+/*
+ * xjitdomain in linux-user: guest accesses are host accesses, with no TLB
+ * fill to hold the domain check. While EN is set, every guest load, store
+ * and AMO first calls helper_dom_check, which also reads env->dom_access.
+ * The TCG memory ops are wrapped here once, for the whole translator, so
+ * that their callers need not know.
+ */
+static void gen_dom_check(TCGv addr, MemOp mop, MMUAccessType access_type)
+{
+    if (tcg_ctx->gen_tb->cs_base & TB_CS_BASE_DOMCHK) {
+        uint32_t desc = memop_size(mop) | access_type << 8 |
+                        memop_alignment_bits(mop) << 16;
+
+        gen_helper_dom_check(tcg_env, addr, tcg_constant_i32(desc));
+    }
+}
+
+#define DOM_CHECKED_LDST(N, S, T)                                       \
+    static inline void dom_##N##_##S(TCGv_##S v, TCGv a, TCGArg i,      \
+                                     MemOp m)                           \
+    {                                                                   \
+        gen_dom_check(a, m, T);                                         \
+        N##_##S(v, a, i, m);                                            \
+    }
+
+#define DOM_CHECKED_ATOMIC2(N, S)                                       \
+    static inline void dom_##N##_##S(TCGv_##S r, TCGv a, TCGv_##S v,    \
+                                     TCGArg i, MemOp m)                 \
+    {                                                                   \
+        gen_dom_check(a, m, MMU_DATA_STORE);                            \
+        N##_##S(r, a, v, i, m);                                         \
+    }
+
+#define DOM_CHECKED_ATOMIC3(N, S)                                       \
+    static inline void dom_##N##_##S(TCGv_##S r, TCGv a, TCGv_##S o,    \
+                                     TCGv_##S n, TCGArg i, MemOp m)     \
+    {                                                                   \
+        gen_dom_check(a, m, MMU_DATA_STORE);                            \
+        N##_##S(r, a, o, n, i, m);                                      \
+    }
+
+/* The _tl names expand to these */
+DOM_CHECKED_LDST(tcg_gen_qemu_ld, i32, MMU_DATA_LOAD)
+DOM_CHECKED_LDST(tcg_gen_qemu_ld, i64, MMU_DATA_LOAD)
+DOM_CHECKED_LDST(tcg_gen_qemu_st, i32, MMU_DATA_STORE)
+DOM_CHECKED_LDST(tcg_gen_qemu_st, i64, MMU_DATA_STORE)
+DOM_CHECKED_ATOMIC3(tcg_gen_atomic_cmpxchg, i32)
+DOM_CHECKED_ATOMIC3(tcg_gen_atomic_cmpxchg, i64)
+DOM_CHECKED_ATOMIC3(tcg_gen_atomic_cmpxchg, i128)
+DOM_CHECKED_ATOMIC2(tcg_gen_atomic_xchg, i32)
+DOM_CHECKED_ATOMIC2(tcg_gen_atomic_xchg, i64)
+DOM_CHECKED_ATOMIC2(tcg_gen_atomic_fetch_add, i32)
+DOM_CHECKED_ATOMIC2(tcg_gen_atomic_fetch_add, i64)
+DOM_CHECKED_ATOMIC2(tcg_gen_atomic_fetch_and, i32)
+DOM_CHECKED_ATOMIC2(tcg_gen_atomic_fetch_and, i64)
+DOM_CHECKED_ATOMIC2(tcg_gen_atomic_fetch_or, i32)
+DOM_CHECKED_ATOMIC2(tcg_gen_atomic_fetch_or, i64)
+DOM_CHECKED_ATOMIC2(tcg_gen_atomic_fetch_xor, i32)
+DOM_CHECKED_ATOMIC2(tcg_gen_atomic_fetch_xor, i64)
+DOM_CHECKED_ATOMIC2(tcg_gen_atomic_fetch_smin, i32)
+DOM_CHECKED_ATOMIC2(tcg_gen_atomic_fetch_smin, i64)
+DOM_CHECKED_ATOMIC2(tcg_gen_atomic_fetch_umin, i32)
+DOM_CHECKED_ATOMIC2(tcg_gen_atomic_fetch_umin, i64)
+DOM_CHECKED_ATOMIC2(tcg_gen_atomic_fetch_smax, i32)
+DOM_CHECKED_ATOMIC2(tcg_gen_atomic_fetch_smax, i64)
+DOM_CHECKED_ATOMIC2(tcg_gen_atomic_fetch_umax, i32)
+DOM_CHECKED_ATOMIC2(tcg_gen_atomic_fetch_umax, i64)
+
+/* Object-like, so that the ops passed as function pointers are wrapped */
+#define tcg_gen_qemu_ld_i32             dom_tcg_gen_qemu_ld_i32
+#define tcg_gen_qemu_ld_i64             dom_tcg_gen_qemu_ld_i64
+#define tcg_gen_qemu_st_i32             dom_tcg_gen_qemu_st_i32
+#define tcg_gen_qemu_st_i64             dom_tcg_gen_qemu_st_i64
+#define tcg_gen_atomic_cmpxchg_i32      dom_tcg_gen_atomic_cmpxchg_i32
+#define tcg_gen_atomic_cmpxchg_i64      dom_tcg_gen_atomic_cmpxchg_i64
+#define tcg_gen_atomic_cmpxchg_i128     dom_tcg_gen_atomic_cmpxchg_i128
+#define tcg_gen_atomic_xchg_i32         dom_tcg_gen_atomic_xchg_i32
+#define tcg_gen_atomic_xchg_i64         dom_tcg_gen_atomic_xchg_i64
+#define tcg_gen_atomic_fetch_add_i32    dom_tcg_gen_atomic_fetch_add_i32
+#define tcg_gen_atomic_fetch_add_i64    dom_tcg_gen_atomic_fetch_add_i64
+#define tcg_gen_atomic_fetch_and_i32    dom_tcg_gen_atomic_fetch_and_i32
+#define tcg_gen_atomic_fetch_and_i64    dom_tcg_gen_atomic_fetch_and_i64
+#define tcg_gen_atomic_fetch_or_i32     dom_tcg_gen_atomic_fetch_or_i32
+#define tcg_gen_atomic_fetch_or_i64     dom_tcg_gen_atomic_fetch_or_i64
+#define tcg_gen_atomic_fetch_xor_i32    dom_tcg_gen_atomic_fetch_xor_i32
+#define tcg_gen_atomic_fetch_xor_i64    dom_tcg_gen_atomic_fetch_xor_i64
+#define tcg_gen_atomic_fetch_smin_i32   dom_tcg_gen_atomic_fetch_smin_i32
+#define tcg_gen_atomic_fetch_smin_i64   dom_tcg_gen_atomic_fetch_smin_i64
+#define tcg_gen_atomic_fetch_umin_i32   dom_tcg_gen_atomic_fetch_umin_i32
+#define tcg_gen_atomic_fetch_umin_i64   dom_tcg_gen_atomic_fetch_umin_i64
+#define tcg_gen_atomic_fetch_smax_i32   dom_tcg_gen_atomic_fetch_smax_i32
+#define tcg_gen_atomic_fetch_smax_i64   dom_tcg_gen_atomic_fetch_smax_i64
+#define tcg_gen_atomic_fetch_umax_i32   dom_tcg_gen_atomic_fetch_umax_i32
+#define tcg_gen_atomic_fetch_umax_i64   dom_tcg_gen_atomic_fetch_umax_i64
+#endif
+
 /* global register indices */
 static TCGv cpu_gpr[32], cpu_gprh[32], cpu_pc, cpu_vl, cpu_vstart;
 static TCGv_i64 cpu_fpr[32]; /* assume F and D extensions */
@@ -1427,6 +1524,21 @@ static void riscv_tr_translate_insn(DisasContextBase *dcbase, CPUState *cpu)
         tcg_ctx->emit_before_op = NULL;
         ctx->base.is_jmp = DISAS_NORETURN;
     }
+
+#ifdef CONFIG_USER_ONLY
+    /*
+     * xjitdomain in linux-user: the domain check of the fetch, once per TB
+     * since only its first insn may leave its page. Emitted last, so that
+     * it runs before the checks above.
+     */
+    if ((ctx->base.tb->cs_base & TB_CS_BASE_DOMCHK) &&
+        ctx->base.num_insns == 1) {
+        tcg_ctx->emit_before_op = QTAILQ_NEXT(ctx->base.insn_start, link);
+        gen_helper_dom_fetch(tcg_env, tcg_constant_tl(ctx->base.pc_first),
+                             tcg_constant_i32(ctx->cur_insn_len));
+        tcg_ctx->emit_before_op = NULL;
+    }
+#endif
 
     /* Only the first insn within a TB is allowed to cross a page boundary. */
     if (ctx->base.is_jmp == DISAS_NEXT) {

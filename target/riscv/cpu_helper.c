@@ -37,6 +37,9 @@
 #include "debug.h"
 #include "pmp.h"
 #include "qemu/plugin.h"
+#ifdef CONFIG_USER_ONLY
+#include "user/page-protection.h"
+#endif
 
 int riscv_env_mmu_index(CPURISCVState *env, bool ifetch)
 {
@@ -67,12 +70,152 @@ int riscv_env_mmu_index(CPURISCVState *env, bool ifetch)
 #endif
 }
 
+static bool xjitdomain_checking(CPURISCVState *env)
+{
+    return riscv_cpu_cfg(env)->ext_xjitdomain && (env->dstatus & DSTATUS_EN);
+}
+
+/* drights2:drights1:drights0, {X, W, R} at bit 3 * (8 * e + k) */
+static int xjitdomain_rights(CPURISCVState *env, uint64_t e, uint64_t k)
+{
+    int rights = 0;
+
+    for (int b = 0; b < 3; b++) {
+        int bit = 3 * (JITDOMAIN_NDOMS * e + k) + b;
+        rights |= ((env->drights[bit / 64] >> (bit % 64)) & 1) << b;
+    }
+    return rights;
+}
+
+/*
+ * The rules of the xjitdomain access check for an access of the kind
+ * env->dom_access to a page with the given key. pmp_locked tells whether
+ * the PMP entry it matched is locked, which M mode accesses depend on.
+ * prot is narrowed to the rights the domain grants.
+ */
+static bool xjitdomain_check_key(CPURISCVState *env, uint64_t key,
+                                 MMUAccessType access_type, int mode,
+                                 bool pmp_locked, int *prot)
+{
+    /*
+     * Implicit DRS accesses must hit DRS pages, and nothing else may touch
+     * them from U mode
+     */
+    bool drs_page = key == get_field(env->dstatus, DSTATUS_DRSKEY);
+
+    if (env->dom_access == XJITDOMAIN_ACCESS_DRS) {
+        return drs_page;
+    }
+    if (drs_page && mode == PRV_U) {
+        return false;
+    }
+
+    bool checked = mode == PRV_U ||
+                   (mode == PRV_S && (env->dstatus & DSTATUS_SCHK)) ||
+                   (mode == PRV_M && pmp_locked);
+    if (!checked) {
+        return true;
+    }
+
+    uint64_t e = env->curdom;
+    if (env->dom_access == XJITDOMAIN_ACCESS_TYPED) {
+        e = (env->dtarget >> (3 * env->curdom)) & 7;
+    }
+    uint64_t e_fetch = (env->dpend & DPEND_VALID) ?
+                       get_field(env->dpend, DPEND_DOM) : env->curdom;
+    int rights = xjitdomain_rights(env, e, key);
+    int dom_prot = 0;
+
+    if (rights & DRIGHT_R) {
+        dom_prot |= PAGE_READ;
+    }
+    if (rights & DRIGHT_W) {
+        dom_prot |= PAGE_WRITE;
+    }
+    if (xjitdomain_rights(env, e_fetch, key) & DRIGHT_X) {
+        dom_prot |= PAGE_EXEC;
+    }
+    /* LR, AMOs and SC need R and W */
+    if ((env->dom_access == XJITDOMAIN_ACCESS_LR ||
+         env->dom_access == XJITDOMAIN_ACCESS_AMO) &&
+        (rights & (DRIGHT_R | DRIGHT_W)) != (DRIGHT_R | DRIGHT_W)) {
+        dom_prot &= ~(PAGE_READ | PAGE_WRITE);
+    }
+    /*
+     * cbo.clean, cbo.flush and cbo.inval need W, whatever the probe type.
+     * The entry is refilled on the next access, so prot is left alone.
+     */
+    if (env->dom_access == XJITDOMAIN_ACCESS_CBO) {
+        return rights & DRIGHT_W;
+    }
+    *prot &= dom_prot;
+
+    switch (access_type) {
+    case MMU_INST_FETCH:
+        return dom_prot & PAGE_EXEC;
+    case MMU_DATA_LOAD:
+        return dom_prot & PAGE_READ;
+    default:
+        return dom_prot & PAGE_WRITE;
+    }
+}
+
 #ifdef CONFIG_USER_ONLY
 /* linux-user has no TLB to flush: only record the kind of access */
 void xjitdomain_begin_access(CPURISCVState *env, vaddr addr, int size,
                              int mmu_idx, XJitDomainAccess kind)
 {
     env->dom_access = kind;
+}
+
+/*
+ * The base checks come first: when the page is unmapped or its protection
+ * refuses the access, the check passes and the access itself raises the
+ * SIGSEGV
+ */
+static bool xjitdomain_user_check_page(CPURISCVState *env, vaddr addr,
+                                       MMUAccessType access_type)
+{
+    int flags = page_get_flags(addr);
+    int need = access_type == MMU_INST_FETCH ? PAGE_EXEC :
+               access_type == MMU_DATA_LOAD ? PAGE_READ : PAGE_WRITE_ORG;
+    int prot = PAGE_RWX;
+
+    if (!(flags & PAGE_VALID) || !(flags & need)) {
+        return true;
+    }
+    return xjitdomain_check_key(env, (flags & PAGE_DOMKEY) / PAGE_TARGET_1,
+                                access_type, PRV_U, false, &prot);
+}
+
+void xjitdomain_user_check(CPURISCVState *env, vaddr addr, int size,
+                           MMUAccessType access_type, uintptr_t ra)
+{
+    vaddr last = addr + size - 1;
+    vaddr page = addr;
+
+    if (!xjitdomain_checking(env) ||
+        env->dom_access == XJITDOMAIN_ACCESS_UNCHECKED) {
+        return;
+    }
+    /* As in the TLB fill: an AMO, split or not, is checked as a store */
+    if (env->dom_access == XJITDOMAIN_ACCESS_AMO) {
+        access_type = MMU_DATA_STORE;
+    }
+    for (;;) {
+        if (!xjitdomain_user_check_page(env, page, access_type)) {
+            if (env->dom_access == XJITDOMAIN_ACCESS_DRS) {
+                riscv_raise_domain_cfi(env, DCAUSE_DRS, ra);
+            }
+            env->badaddr = page;
+            env_cpu(env)->exception_index = RISCV_EXCP_DOMAIN_ACCESS_FAULT;
+            cpu_loop_exit_restore(env_cpu(env), ra);
+        }
+        if (!((page ^ last) & TARGET_PAGE_MASK)) {
+            return;
+        }
+        page = (page & TARGET_PAGE_MASK) + TARGET_PAGE_SIZE;
+    }
 }
 #endif
 
@@ -1785,11 +1928,6 @@ static void pmu_tlb_fill_incr_ctr(RISCVCPU *cpu, MMUAccessType access_type)
     riscv_pmu_incr_ctr(cpu, pmu_event_type);
 }
 
-static bool xjitdomain_checking(CPURISCVState *env)
-{
-    return riscv_cpu_cfg(env)->ext_xjitdomain && (env->dstatus & DSTATUS_EN);
-}
-
 /*
  * Start an access of the given kind. An entry cached by an ordinary access
  * would let it skip its own check, so the pages it touches are flushed.
@@ -1806,91 +1944,6 @@ void xjitdomain_begin_access(CPURISCVState *env, vaddr addr, int size,
         if ((addr ^ last) & TARGET_PAGE_MASK) {
             tlb_flush_page_by_mmuidx(cs, last, 1 << mmu_idx);
         }
-    }
-}
-
-/* drights2:drights1:drights0, {X, W, R} at bit 3 * (8 * e + k) */
-static int xjitdomain_rights(CPURISCVState *env, uint64_t e, uint64_t k)
-{
-    int rights = 0;
-
-    for (int b = 0; b < 3; b++) {
-        int bit = 3 * (JITDOMAIN_NDOMS * e + k) + b;
-        rights |= ((env->drights[bit / 64] >> (bit % 64)) & 1) << b;
-    }
-    return rights;
-}
-
-/*
- * The rules of the xjitdomain access check for an access of the kind
- * env->dom_access to a page with the given key. pmp_locked tells whether
- * the PMP entry it matched is locked, which M mode accesses depend on.
- * prot is narrowed to the rights the domain grants.
- */
-static bool xjitdomain_check_key(CPURISCVState *env, uint64_t key,
-                                 MMUAccessType access_type, int mode,
-                                 bool pmp_locked, int *prot)
-{
-    /*
-     * Implicit DRS accesses must hit DRS pages, and nothing else may touch
-     * them from U mode
-     */
-    bool drs_page = key == get_field(env->dstatus, DSTATUS_DRSKEY);
-
-    if (env->dom_access == XJITDOMAIN_ACCESS_DRS) {
-        return drs_page;
-    }
-    if (drs_page && mode == PRV_U) {
-        return false;
-    }
-
-    bool checked = mode == PRV_U ||
-                   (mode == PRV_S && (env->dstatus & DSTATUS_SCHK)) ||
-                   (mode == PRV_M && pmp_locked);
-    if (!checked) {
-        return true;
-    }
-
-    uint64_t e = env->curdom;
-    if (env->dom_access == XJITDOMAIN_ACCESS_TYPED) {
-        e = (env->dtarget >> (3 * env->curdom)) & 7;
-    }
-    uint64_t e_fetch = (env->dpend & DPEND_VALID) ?
-                       get_field(env->dpend, DPEND_DOM) : env->curdom;
-    int rights = xjitdomain_rights(env, e, key);
-    int dom_prot = 0;
-
-    if (rights & DRIGHT_R) {
-        dom_prot |= PAGE_READ;
-    }
-    if (rights & DRIGHT_W) {
-        dom_prot |= PAGE_WRITE;
-    }
-    if (xjitdomain_rights(env, e_fetch, key) & DRIGHT_X) {
-        dom_prot |= PAGE_EXEC;
-    }
-    /* LR, AMOs and SC need R and W */
-    if ((env->dom_access == XJITDOMAIN_ACCESS_LR ||
-         env->dom_access == XJITDOMAIN_ACCESS_AMO) &&
-        (rights & (DRIGHT_R | DRIGHT_W)) != (DRIGHT_R | DRIGHT_W)) {
-        dom_prot &= ~(PAGE_READ | PAGE_WRITE);
-    }
-    /*
-     * cbo.clean, cbo.flush and cbo.inval need W, whatever the probe type.
-     * The entry is refilled on the next access, so prot is left alone.
-     */
-    if (env->dom_access == XJITDOMAIN_ACCESS_CBO) {
-        return rights & DRIGHT_W;
-    }
-    *prot &= dom_prot;
-
-    switch (access_type) {
-    case MMU_INST_FETCH:
-        return dom_prot & PAGE_EXEC;
-    case MMU_DATA_LOAD:
-        return dom_prot & PAGE_READ;
-    default:
-        return dom_prot & PAGE_WRITE;
     }
 }
 
