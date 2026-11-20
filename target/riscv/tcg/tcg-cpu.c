@@ -643,6 +643,18 @@ void riscv_cpu_validate_set_extensions(RISCVCPU *cpu, Error **errp)
         return;
     }
 
+#ifdef CONFIG_USER_ONLY
+    /*
+     * linux-user checks domains in the translator, and vector loads and
+     * stores bypass it through their helpers
+     */
+    if (cpu->cfg.ext_xjitdomain && cpu->cfg.ext_zve32x) {
+        error_setg(errp, "xjitdomain is not supported with vector extensions "
+                   "in user mode");
+        return;
+    }
+#endif
+
     if (riscv_has_ext(env, RVS) && !riscv_has_ext(env, RVU)) {
         error_setg(errp,
                    "Setting S extension without U extension is illegal");
