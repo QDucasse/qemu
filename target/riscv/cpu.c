@@ -481,7 +481,6 @@ static void set_satp_mode_default_map(RISCVCPU *cpu)
 }
 #endif
 
-#ifndef CONFIG_USER_ONLY
 static void riscv_register_custom_csrs(RISCVCPU *cpu, const RISCVCSR *csr_list)
 {
     for (size_t i = 0; csr_list[i].csr_ops.name; i++) {
@@ -492,7 +491,6 @@ static void riscv_register_custom_csrs(RISCVCPU *cpu, const RISCVCSR *csr_list)
         }
     }
 }
-#endif
 
 static ObjectClass *riscv_cpu_class_by_name(const char *cpu_model)
 {
@@ -1147,9 +1145,9 @@ static void riscv_cpu_init(Object *obj)
     if (mcc->def->custom_csrs) {
         riscv_register_custom_csrs(cpu, mcc->def->custom_csrs);
     }
+#endif
     /* Properties are not parsed yet: the predicates check ext_xjitdomain */
     riscv_register_custom_csrs(cpu, xjitdomain_csr_list);
-#endif
 
     accel_cpu_instance_init(CPU(obj));
 }

@@ -24,6 +24,8 @@ static RISCVException xjitdomain(CPURISCVState *env, int csrno)
     return RISCV_EXCP_ILLEGAL_INST;
 }
 
+/* linux-user runs in U mode and only sees curdom and udsp */
+#ifndef CONFIG_USER_ONLY
 /* mndstatus, the RNMI copy of the trap fields, exists only with Smrnmi */
 static RISCVException xjitdomain_smrnmi(CPURISCVState *env, int csrno)
 {
@@ -46,6 +48,7 @@ static RISCVException xjitdomain_dmpcfg(CPURISCVState *env, int csrno)
 
     return RISCV_EXCP_ILLEGAL_INST;
 }
+#endif
 
 static uint64_t xjitdomain_dtarget_identity(void)
 {
@@ -121,6 +124,7 @@ void xjitdomain_set_dom(CPURISCVState *env, uint64_t curdom, uint64_t dpend)
     env->dpend = dpend;
 }
 
+#ifndef CONFIG_USER_ONLY
 static uint64_t *xjitdomain_csr_ptr(CPURISCVState *env, int csrno)
 {
     switch (csrno) {
@@ -183,6 +187,7 @@ static RISCVException write_xjitdomain(CPURISCVState *env, int csrno,
     }
     return RISCV_EXCP_NONE;
 }
+#endif
 
 static RISCVException read_curdom(CPURISCVState *env, int csrno,
                                   target_ulong *val)
@@ -247,6 +252,7 @@ static RISCVException write_udsp(CPURISCVState *env, int csrno,
     return RISCV_EXCP_NONE;
 }
 
+#ifndef CONFIG_USER_ONLY
 /* dmpcfg0/1: a {L, k} nibble per PMP entry, 16 entries per CSR */
 static RISCVException read_dmpcfg(CPURISCVState *env, int csrno,
                                   target_ulong *val)
@@ -279,8 +285,14 @@ static RISCVException write_dmpcfg(CPURISCVState *env, int csrno,
 #define XJITDOMAIN_CSR(no, name) \
     { .csrno = no, .csr_ops = { name, xjitdomain, read_xjitdomain, \
                                 write_xjitdomain } }
+#endif
 
 const RISCVCSR xjitdomain_csr_list[] = {
+    { .csrno = CSR_CURDOM,
+      .csr_ops = { "curdom", xjitdomain, read_curdom } },
+    { .csrno = CSR_UDSP,
+      .csr_ops = { "udsp", xjitdomain_udsp, read_udsp, write_udsp } },
+#ifndef CONFIG_USER_ONLY
     XJITDOMAIN_CSR(CSR_DSTATUS, "dstatus"),
     XJITDOMAIN_CSR(CSR_DRIGHTS0, "drights0"),
     XJITDOMAIN_CSR(CSR_DRIGHTS1, "drights1"),
@@ -294,13 +306,10 @@ const RISCVCSR xjitdomain_csr_list[] = {
     { .csrno = CSR_MNDSTATUS,
       .csr_ops = { "mndstatus", xjitdomain_smrnmi, read_xjitdomain,
                    write_xjitdomain } },
-    { .csrno = CSR_CURDOM,
-      .csr_ops = { "curdom", xjitdomain, read_curdom } },
-    { .csrno = CSR_UDSP,
-      .csr_ops = { "udsp", xjitdomain_udsp, read_udsp, write_udsp } },
     { .csrno = CSR_DMPCFG0,
       .csr_ops = { "dmpcfg0", xjitdomain_dmpcfg, read_dmpcfg, write_dmpcfg } },
     { .csrno = CSR_DMPCFG1,
       .csr_ops = { "dmpcfg1", xjitdomain_dmpcfg, read_dmpcfg, write_dmpcfg } },
+#endif
     { }
 };
